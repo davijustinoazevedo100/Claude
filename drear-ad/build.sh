@@ -10,4 +10,4 @@ node render.mjs cues build/cues.json
 python3 -P audio/soundtrack.py build/cues.json build/soundtrack_raw.wav
 ./audio/normalize.sh build/soundtrack_raw.wav build/soundtrack.wav
 node render.mjs video output/drear-opium5-ad.mp4 --fps 60 --audio build/soundtrack.wav
-node render.mjs stills build/poster 59.5 && cp build/poster/t_59.50.png output/poster.png
+node render.mjs stills build/poster 119.5 && cp build/poster/t_119.50.png output/poster.png

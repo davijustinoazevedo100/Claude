@@ -6,7 +6,7 @@
 // Everything is a pure function of time: window.renderFrame(t) paints the frame at t
 // seconds, so the film can be rendered frame-exactly at any frame rate.
 (function () {
-  const W = 1920, H = 1080, DURATION = 60;
+  const W = 1920, H = 1080, DURATION = 120;
   // names on screen (change here to rename; the giant letter crops follow MODEL too)
   const MODEL = 'Opium 5', PRODUCT = 'Drear', BRAND = 'Gravity.Ai';
   const lastWordSplit = (s) => { const i = s.lastIndexOf(' '); return i < 0 ? [s] : [s.slice(0, i), s.slice(i + 1)]; };
@@ -242,10 +242,15 @@
     merge: 12.0, mergeEnd: 12.4, text2: 13.0, text2Out: 16.0,
     orbitIn: 16.6, orbit0: 17.0, orbit1: 20.6, orbitOut: 21.15,
     words: [22.0, 23.0, 24.0, 25.0], lockup1: 26.0, collapse1: 29.3,
-    drear: 30.0, title2: 30.3, grow2: 33.0, split2: [35.5, 36.75, 37.75], grid: 38.75, drearSolid: 39.65,
-    tasks: [40.0, 40.5, 41.0, 41.5, 41.875, 42.25, 42.5, 42.75], gridEnd: 43.25,
-    ring: 43.5, absorb: 45.6, gulp: 46.1, text3: 47.25, text4: 50.25, final: 53.5, footer: 55.0,
+    demo1: 30.0,                                   // someone using Opium 5 (src/demos.js)
+    drear: 60.0, title2: 60.3, grow2: 63.0, split2: [65.5, 66.75, 67.75], grid: 68.75, drearSolid: 69.65,
+    tasks: [70.0, 70.5, 71.0, 71.5, 71.875, 72.25, 72.5, 72.75], gridEnd: 73.25,
+    ring: 73.5, absorb: 75.6, gulp: 76.1, text3: 77.25, text4: 80.25,
+    demo2: 83.5,                                   // someone using Drear (src/demos.js)
+    final: 113.5, footer: 115.0,
   };
+  T.blinks = [T.drear + 1.2, T.drear + 2.75, T.grow2 + 1.55, T.split2[1] + 0.45, T.split2[2] + 0.55,
+    T.ring + 0.65, T.gulp + 0.45, T.text3 + 1.35, T.text4 + 1.65, T.final + 3.1, T.final + 5.5];
   window.CUES = T;
 
   // part 1 crop sequence
@@ -273,10 +278,10 @@
     const c0 = SEQ1.crops[0];
     c0.draw = (k) => shape(G.gravity, 0, 0, k, 'line', -45 * rad);
     SEQ2.crops = [
-      { t0: T.grow2, draw: drearCrop([34.55]), vx: 0.0, vy: 0.012, span: 0.44, rot: -16 * rad },
+      { t0: T.grow2, draw: drearCrop([T.grow2 + 1.55]), vx: 0.0, vy: 0.012, span: 0.44, rot: -16 * rad },
       { t0: T.split2[0], draw: drearCrop(), vx: 0.06, vy: -0.33, span: 0.66, rot: 9 * rad },
-      { t0: T.split2[1], draw: drearCrop([37.2]), vx: -0.2, vy: 0.13, span: 0.62, rot: -7 * rad },
-      { t0: T.split2[2], draw: drearCrop([38.3]), vx: 0, vy: 0, span: 1.32, rot: 0, zoom: 0.02 },
+      { t0: T.split2[1], draw: drearCrop([T.split2[1] + 0.45]), vx: -0.2, vy: 0.13, span: 0.62, rot: -7 * rad },
+      { t0: T.split2[2], draw: drearCrop([T.split2[2] + 0.55]), vx: 0, vy: 0, span: 1.32, rot: 0, zoom: 0.02 },
     ];
   }
 
@@ -436,9 +441,9 @@
     const pIn = t - t0;
     const sc = spring(pIn, 1.9, 0.34);
     const sq = Math.sin(Math.min(1, pIn / 0.5) * Math.PI) * 0.1 * (1 - seg(pIn, 0.3, 0.8));
-    let b = Math.max(blink(t, 31.2), blink(t, 32.75));
+    let b = Math.max(blink(t, T.drear + 1.2), blink(t, T.drear + 2.75));
     let lx = 0;
-    lx += -E.ioCubic(seg(t, 31.55, 31.8)) + E.ioCubic(seg(t, 31.95, 32.2)) * 2 - E.ioCubic(seg(t, 32.4, 32.6));
+    lx += -E.ioCubic(seg(t, t0 + 1.55, t0 + 1.8)) + E.ioCubic(seg(t, t0 + 1.95, t0 + 2.2)) * 2 - E.ioCubic(seg(t, t0 + 2.4, t0 + 2.6));
     return { k: DREAR_H * sc, sx: 1 + sq, sy: 1 - sq, blink: b, lx };
   }
   function p2Intro(t) {
@@ -537,7 +542,7 @@
     } else {
       const wake = spring(t - T.drearSolid, 2.6, 0.32);
       let b = 1 - E.outCubic(seg(t, T.drearSolid + 0.1, T.drearSolid + 0.35));
-      b = Math.max(b, blink(t, 44.15), blink(t, 46.55));
+      b = Math.max(b, blink(t, T.ring + 0.65), blink(t, T.gulp + 0.45));
       // gaze follows the ring while spinning
       if (t >= T.ring + 0.3) {
         const w = E.ioCubic(seg(t, T.ring + 0.3, T.ring + 0.7)) * (1 - E.ioCubic(seg(t, T.gulp - 0.15, T.gulp)));
@@ -564,14 +569,15 @@
   // Drear on its own between the grid and the end card
   function p2Hero(t) {
     if (t < T.text3 + 0.5) return;
+    if (t >= T.demo2 && t < T.final) return;          // meanwhile Drear lives in the demo window
     const L = drearFinalLayout();
     const p = E.ioQuart(seg(t, T.final, T.final + 0.75));
     const x = lerp(W / 2, L.dx, p), y = lerp(415, L.cy, p), k = lerp(DREAR_H, L.dh, p);
-    let b = Math.max(blink(t, 48.6), blink(t, 51.9), blink(t, 56.6), blink(t, 59.0));
+    let b = Math.max(blink(t, T.text3 + 1.35), blink(t, T.text4 + 1.65), blink(t, T.final + 3.1), blink(t, T.final + 5.5));
     let lx = 0, ly = 0;
     // reads the text, then looks back at us
-    lx += E.ioCubic(seg(t, 57.5, 57.8)) * (1 - E.ioCubic(seg(t, 58.4, 58.7)));
-    ly += 0.6 * E.ioCubic(seg(t, 49.0, 49.3)) * (1 - E.ioCubic(seg(t, 49.9, 50.2)));
+    lx += E.ioCubic(seg(t, T.final + 4.0, T.final + 4.3)) * (1 - E.ioCubic(seg(t, T.final + 4.9, T.final + 5.2)));
+    ly += 0.6 * E.ioCubic(seg(t, T.text3 + 1.75, T.text3 + 2.05)) * (1 - E.ioCubic(seg(t, T.text3 + 2.65, T.text3 + 2.95)));
     const hop = Math.sin(Math.PI * seg(t, T.final + 0.62, T.final + 0.9)) * 0.06;
     drear(x, y, k, { blink: b, lx, ly, sx: 1 + hop, sy: 1 - hop });
   }
@@ -584,20 +590,18 @@
       textLine(['One agent.', 'Many tasks.'], W / 2, 700 + dy, TITLE, { gaps: [0, gapClose(t, T.text3, TITLE)], alpha: a });
     }
     const L = drearFinalLayout();
-    // "Powered by [mark] Opium 5" -> moves under the wordmark for the end card
-    if (t >= T.text4 + 0.1) {
-      const p = E.ioQuart(seg(t, T.final, T.final + 0.75));
-      const size = lerp(TITLE, L.small, p);
-      const mark = { mark: true, w: size * 0.92 };
-      const items = ['Powered by', mark, MODEL];
-      const g0 = gapClose(t, T.text4 + 0.1, TITLE);
-      const cx0 = W / 2, cy0 = 700;
-      const cx1 = L.tx, cy1 = L.cy + 78;
-      // centre-anchored at start, left-anchored at the end: interpolate the left edge
-      font(size);
-      const width = measureItems(items, size, [0, g0 * (1 - p), 0]);
-      const left = lerp(cx0 - width / 2, cx1, p);
-      textLine(items, left, lerp(cy0, cy1, p), size, { anchor: 'left', gaps: [0, g0 * (1 - p), 0] });
+    // "Powered by [mark] Opium 5" before the Drear demo...
+    if (t >= T.text4 + 0.1 && t < T.demo2 + 0.3) {
+      const a = 1 - seg(t, T.demo2 - 0.1, T.demo2 + 0.25);
+      const dy = 14 * E.inCubic(seg(t, T.demo2 - 0.1, T.demo2 + 0.25));
+      const mark = { mark: true, w: TITLE * 0.92 };
+      textLine(['Powered by', mark, MODEL], W / 2, 700 + dy, TITLE, { gaps: [0, gapClose(t, T.text4 + 0.1, TITLE), 0], alpha: a });
+    }
+    // ...and again under the wordmark on the end card
+    if (t >= T.final + 0.55) {
+      const a = E.outCubic(seg(t, T.final + 0.55, T.final + 1.2));
+      const mark = { mark: true, w: L.small * 0.92 };
+      textLine(['Powered by', mark, MODEL], L.tx + 4, L.cy + 78 + (1 - a) * 12, L.small, { anchor: 'left', alpha: a });
     }
     // the wordmark
     if (t >= T.final + 0.45) {
@@ -626,13 +630,6 @@
       ctx.restore();
     }
   }
-  function measureItems(items, size, gaps) {
-    font(size);
-    const space = ctx.measureText(' ').width;
-    let total = 0;
-    items.forEach((it, i) => { total += typeof it === 'string' ? ctx.measureText(it).width : it.w; if (i) total += space + (gaps[i] || 0); });
-    return total;
-  }
 
   // ------------------------------------------------------------------ frame
   function renderFrame(t) {
@@ -647,6 +644,7 @@
     p1Orbit(t);
     if (t >= T.words[0] && t < T.lockup1) p1Words(t);
     p1Lockup(t);
+    if (window.DEMOS) window.DEMOS.demo1(t);
     // part 2
     p2Intro(t);
     if (t >= T.grow2 && t < T.grid) drawSequence(SEQ2, t);
@@ -658,16 +656,31 @@
     p2Hero(t);
     p2Texts(t);
     ctx.restore();
+    if (window.DEMOS) window.DEMOS.demo2(t);
   }
+
+  // shared with src/demos.js
+  window.FX = {
+    get ctx() { return ctx; }, get G() { return G; }, get CAP() { return CAP; },
+    W, H, COL, LW, E, T, MODEL, PRODUCT, BRAND, DREAR_H, TITLE,
+    clamp01, lerp, seg, spring, blink, rr, panel, guide, ring, shape, drear, gravityLive, textLine, font, measure, gapClose,
+  };
 
   window.setupFilm = async function (canvas) {
     ctx = canvas.getContext('2d', { alpha: false });
     G = window.GEO;
-    const faces = [new FontFace(FONT, 'url(../fonts/InterDisplay-Regular.otf)')];
+    const faces = [
+      new FontFace(FONT, 'url(../fonts/InterDisplay-Regular.otf)'),
+      new FontFace('UI', 'url(../fonts/Inter-Regular.otf)'),
+      new FontFace('UIM', 'url(../fonts/Inter-Medium.otf)'),
+      new FontFace('MONO', 'url(../fonts/JetBrainsMono-Regular.ttf)'),
+      new FontFace('MONOB', 'url(../fonts/JetBrainsMono-SemiBold.ttf)'),
+    ];
     for (const f of faces) { await f.load(); document.fonts.add(f); }
     ctx.font = `1000px ${FONT}`;
     CAP = ctx.measureText('H').actualBoundingBoxAscent / 1000;
     buildSequences();
+    if (window.DEMOS) window.DEMOS.setup();
     return { W, H, DURATION };
   };
   window.renderFrame = renderFrame;
