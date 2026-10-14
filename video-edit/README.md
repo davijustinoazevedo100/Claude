@@ -41,3 +41,7 @@ ffmpeg -i input.mp4 -vn -af "highpass=f=80,afftdn=nf=-28,acompressor=threshold=-
 python3 sfx.py voice.wav mix.wav 27.706
 python3 edit.py render <pasta> saida.mp4
 ```
+
+## Dia 2
+
+Edição do segundo vídeo (o NPC / primeiro brinquedo): ver `dia2/README.md` e `output/devlog-dia2-motion.mp4`.
