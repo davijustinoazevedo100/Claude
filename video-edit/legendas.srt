@@ -1,0 +1,55 @@
+1
+00:00:01,000 --> 00:00:01,950
+Tudo bem?
+
+2
+00:00:01,950 --> 00:00:03,700
+Meu nome é Pedro
+
+3
+00:00:04,400 --> 00:00:06,260
+É meu primeiro dia
+
+4
+00:00:06,260 --> 00:00:08,300
+Tentando desenvolver um jogo
+
+5
+00:00:08,300 --> 00:00:11,150
+De sobrevivência ou de terror.
+
+6
+00:00:11,150 --> 00:00:11,740
+Então,
+
+7
+00:00:11,740 --> 00:00:14,120
+Esse lado de sobrevivência
+
+8
+00:00:14,120 --> 00:00:16,960
+E esse outro lado de terror.
+
+9
+00:00:16,960 --> 00:00:18,960
+E meu amigo já está fazendo
+
+10
+00:00:18,960 --> 00:00:20,140
+Um jogo de terror,
+
+11
+00:00:20,140 --> 00:00:21,100
+Então eu acho que
+
+12
+00:00:21,100 --> 00:00:23,150
+Vamos fazer um de terror, claro!
+
+13
+00:00:23,150 --> 00:00:23,920
+E também...
+
+14
+00:00:23,920 --> 00:00:25,750
+O nome dele é Davi.
