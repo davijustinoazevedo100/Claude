@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Opium 5 / Drear</title>
+<style>html, body { margin: 0; background: #fff; } canvas { display: block; }</style>
+</head>
+<body>
+<canvas id="film" width="1920" height="1080"></canvas>
+<script src="../node_modules/paper/dist/paper-core.min.js"></script>
+<script src="shapes.js"></script>
+<script src="geometry.js"></script>
+<script src="anim.js"></script>
+<script>
+  const canvas = document.getElementById('film');
+  window.ready = window.setupFilm(canvas);
+  window.frameData = (t, type = 'image/png') => { window.renderFrame(t); return canvas.toDataURL(type); };
+  // contact sheet of several times, scaled down, with time labels
+  window.sheet = (times, cols, scale) => {
+    const w = 1920 * scale, h = 1080 * scale, lab = 18;
+    const rows = Math.ceil(times.length / cols);
+    const S = document.createElement('canvas'); S.width = cols * w; S.height = rows * (h + lab);
+    const c = S.getContext('2d'); c.fillStyle = '#ddd'; c.fillRect(0, 0, S.width, S.height);
+    times.forEach((t, i) => {
+      window.renderFrame(t);
+      const x = (i % cols) * w, y = Math.floor(i / cols) * (h + lab);
+      c.drawImage(canvas, x, y + lab, w, h);
+      c.fillStyle = '#c00'; c.font = '13px monospace'; c.fillText('t=' + t.toFixed(2), x + 4, y + 13);
+      c.strokeStyle = '#999'; c.strokeRect(x + 0.5, y + lab + 0.5, w - 1, h - 1);
+    });
+    return S.toDataURL('image/png');
+  };
+  // ?t=12.3 opens a still in a normal browser
+  const q = new URLSearchParams(location.search);
+  if (q.has('t')) window.ready.then(() => window.renderFrame(parseFloat(q.get('t'))));
+</script>
+</body>
+</html>

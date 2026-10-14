@@ -1,0 +1,12 @@
+{
+  "name": "drear-opium5-ad",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "paper": "0.12.18",
+    "playwright": "1.56.1"
+  }
+}
