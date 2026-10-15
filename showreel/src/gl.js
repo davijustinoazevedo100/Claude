@@ -22,6 +22,7 @@ uniform vec3 uBgFlat;
 uniform float uBgFlatMix;
 uniform float uTime;
 uniform float uFloor;
+uniform vec3 uIris;
 out vec4 frag;
 
 float smin(float a, float b, float k){
@@ -160,7 +161,8 @@ void main(){
     t += d * 0.92;
     if (t > 16.0) break;
   }
-  vec3 bg = mix(background(uv), uBgFlat, uBgFlatMix);
+  float iris = 1.0 - smoothstep(uIris.z - 1.5 / uRes.y, uIris.z, length(uv - uIris.xy));
+  vec3 bg = mix(background(uv), uBgFlat, max(uBgFlatMix, iris * step(0.0001, uIris.z)));
   vec3 col = bg;
   float cov = hit ? 1.0 : 1.0 - smoothstep(0.0, 1.25, dmin);
   if (cov > 0.0){
@@ -207,7 +209,7 @@ export class BlobGL {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     this.loc = {};
-    for (const n of ['uRes', 'uCamPos', 'uCamRot', 'uFocal', 'uBlobs', 'uCols', 'uK', 'uShade', 'uBgA', 'uBgB', 'uBgFlat', 'uBgFlatMix', 'uTime', 'uFloor'])
+    for (const n of ['uRes', 'uCamPos', 'uCamRot', 'uFocal', 'uBlobs', 'uCols', 'uK', 'uShade', 'uBgA', 'uBgB', 'uBgFlat', 'uBgFlatMix', 'uTime', 'uFloor', 'uIris'])
       this.loc[n] = gl.getUniformLocation(p, n);
   }
 
@@ -231,6 +233,7 @@ export class BlobGL {
     gl.uniform3fv(L.uBgFlat, u.bgFlat);
     gl.uniform1f(L.uBgFlatMix, u.bgFlatMix);
     gl.uniform1f(L.uTime, u.time || 0);
+    gl.uniform3fv(L.uIris, u.iris || [0, 0, 0]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     return { canvas: this.canvas, sx: 0, sy: this.canvas.height - vh, w: vw, h: vh };
   }

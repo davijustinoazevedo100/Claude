@@ -19,7 +19,7 @@ const SUB_OVERRIDE = params.has('sub') ? parseInt(params.get('sub'), 10) : 0;
 const NO_HUD = params.has('nohud');
 
 let out, octx, sub, sctx, tmp, tctx;
-const env = { W, H, SCALE, gl: null, drawScene: null, mini: false };
+const env = { W, H, SCALE, gl: null, drawScene: null, mini: false, px: null };
 
 export async function init() {
   await loadFonts();
@@ -30,6 +30,7 @@ export async function init() {
   [sub, sctx] = makeCanvas(out.width, out.height);
   [tmp, tctx] = makeCanvas(out.width, out.height);
   env.gl = new BlobGL(out.width, out.height);
+  env.px = { w: out.width, h: out.height };
   env.drawScene = drawSceneAt;
   for (const s of SCENES) if (IMPL[s.id].init) await IMPL[s.id].init(env);
 }
@@ -166,12 +167,12 @@ function vignette(ctx, t) {
   ctx.fillRect(0, 0, W, H);
 }
 
-function hudColor(t) {
-  if (t < b(4)) return PAL.paper;
-  if (t < b(7.9)) return PAL.ink;
-  if (t < b(10)) return PAL.paper;
-  if (t < b(14)) return PAL.ink;
-  return PAL.paper;
+function hudStyle(t) {
+  if (t < b(4)) return [PAL.paper, 'source-over'];
+  if (t < b(7.9)) return [PAL.ink, 'source-over'];
+  if (t < b(9.95)) return [PAL.paper, 'source-over'];
+  if (t < b(14)) return [PAL.paper, 'difference'];
+  return [PAL.paper, 'source-over'];
 }
 
 function timecode(i) {
@@ -184,8 +185,9 @@ function hud(ctx, t, i) {
   if (NO_HUD) return;
   const vis = prog(t, 0.05, 0.5) * (1 - prog(t, b(24.6), b(25)));
   if (vis <= 0) return;
-  const col = hudColor(t);
+  const [col, blend] = hudStyle(t);
   ctx.save();
+  ctx.globalCompositeOperation = blend;
   ctx.globalAlpha = 0.92 * Math.min(1, vis * 1.5);
   ctx.fillStyle = col;
   ctx.textBaseline = 'alphabetic';

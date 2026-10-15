@@ -99,15 +99,15 @@ function camera(t) {
   const p = prog(t, b(3.45), b(4));
   const z = Math.pow(38, E.inQuart(p));
   const pose = ballPose(t);
-  const sx = 960, sy = lerp(pose.y, 540, E.inOutCubic(p));
+  const sx = lerp(pose.x, 960, E.inOutCubic(p)), sy = lerp(pose.y, 540, E.inOutCubic(p));
   return { z, px: pose.x, py: pose.y, sx, sy, p };
 }
 
-function tag(ctx, t, t0, label, ax, ay, tx, ty) {
-  const a = prog(t, t0, t0 + 0.28, E.outBack) * (1 - prog(t, t0 + 0.55, t0 + 0.75));
+function tag(ctx, t, t0, t1, label, ax, ay, tx, ty) {
+  const a = prog(t, t0, t0 + 0.28, E.outBack) * (1 - prog(t, t1, t1 + 0.18));
   if (a <= 0.001) return;
   ctx.save();
-  ctx.globalAlpha = clamp(a);
+  ctx.globalAlpha *= clamp(a);
   ctx.font = mono(13, 600);
   ctx.letterSpacing = '2px';
   const w = ctx.measureText(label).width + 22;
@@ -142,7 +142,7 @@ function graph(ctx, t) {
   const a = prog(t, 0.12, 0.6, E.out);
   if (a <= 0) return;
   ctx.save();
-  ctx.globalAlpha = a;
+  ctx.globalAlpha *= a;
   ctx.font = mono(12, 500);
   ctx.letterSpacing = '2px';
   ctx.fillStyle = rgba(PAL.paper, 0.55);
@@ -248,9 +248,9 @@ export default {
     const fade = 1 - prog(t, b(3.45), b(3.8));
 
     // ground line, drawn from the centre outward
-    const gl = 1700 * prog(t, 0.04, 0.7, E.out);
+    const gl = prog(t, 0.04, 0.75, E.out);
     ctx.fillStyle = rgba(PAL.paper, 0.32 * fade);
-    ctx.fillRect(760 - gl / 2 - 120, GROUND, gl + 240 * prog(t, 0.04, 0.7), 1.5);
+    ctx.fillRect(760 - 1000 * gl, GROUND, 2200 * gl, 1.5);
 
     // contact rings, markers and frame labels
     for (let n = 0; n < C.length; n++) {
@@ -320,13 +320,13 @@ export default {
     // principle call-outs
     ctx.save();
     ctx.globalAlpha = fade;
-    tag(ctx, t, C[0] - 0.02, 'SQUASH', X[0] - 120, GROUND - 120, X[0] - 30, GROUND - 22);
+    tag(ctx, t, C[0] - 0.02, C[0] + 0.5, 'SQUASH', X[0] - 120, GROUND - 120, X[0] - 30, GROUND - 22);
     const ps = ballPose(C[0] + 0.1);
-    tag(ctx, t, C[0] + 0.07, 'STRETCH', ps.x + 130, ps.y - 40, ps.x + 22, ps.y - 10);
+    tag(ctx, t, C[0] + 0.07, C[0] + 0.55, 'STRETCH', ps.x + 130, ps.y - 40, ps.x + 22, ps.y - 10);
     const pa = flight(b(1.5));
-    tag(ctx, t, b(1.38), 'ARCS', pa.x + 30, pa.y - 105, pa.x + 4, pa.y - 44);
-    tag(ctx, t, b(2.45), 'TIMING', 900, GROUND - 190, 925, GROUND - 60);
-    tag(ctx, t, b(3.05), 'ANTICIPATION', 1105, GROUND - 120, 990, GROUND - 40);
+    tag(ctx, t, b(1.38), b(2.2), 'ARCS', pa.x + 30, pa.y - 105, pa.x + 4, pa.y - 44);
+    tag(ctx, t, b(2.4), b(2.95), 'TIMING', 880, GROUND - 200, 920, GROUND - 62);
+    tag(ctx, t, b(3.02), b(4), 'ANTICIPATION', 1110, GROUND - 130, 992, GROUND - 42);
     ctx.restore();
 
     ctx.save();

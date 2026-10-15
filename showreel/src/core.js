@@ -13,6 +13,9 @@ export const fract = (x) => x - Math.floor(x);
 export const mod = (x, m) => ((x % m) + m) % m;
 export const sign = (x) => (x < 0 ? -1 : 1);
 export const dist = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+// Snap to the output frame clock (all motion-blur sub-frames of a frame agree),
+// so ticking digits stay crisp instead of smearing.
+export const qt = (t, fps = 60) => Math.round(t * fps) / fps;
 
 // ---------------------------------------------------------------- easing
 
