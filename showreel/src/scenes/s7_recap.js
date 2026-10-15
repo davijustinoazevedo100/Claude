@@ -20,7 +20,7 @@ const Z0 = W / TW; // camera scale at which the centre tile fills the frame
 export const CENTER_DOT_R = 12; // x Z0 = 44px when the camera lands
 
 const TILES = [
-  { c: 0, r: 0, o: 8, kind: 'scene', scene: s1, a: b(0.3), len: b(2.9), ph: 0.5, label: '01  SQUASH & STRETCH', zoom: 1.65, fx: 760, fy: 560 },
+  { c: 0, r: 0, o: 8, kind: 'scene', scene: s1, a: b(0.8), len: b(2.55), ph: 0.0, label: '01  SQUASH & STRETCH', zoom: 1.45, fx: 800, fy: 600 },
   { c: 1, r: 0, o: 1, kind: 'scene', scene: s2, a: b(5.0), len: b(2.6), ph: 0.1, label: '02  KINETIC TYPE' },
   { c: 2, r: 0, o: 2, kind: 'scene', scene: s3, a: b(10.5), len: b(2.6), ph: 0.4, label: '03  SHAPE SYSTEMS' },
   { c: 0, r: 1, o: 7, kind: 'sound', label: '04  SOUND DESIGN' },
@@ -28,7 +28,7 @@ const TILES = [
   { c: 2, r: 1, o: 3, kind: 'scene', scene: s4, a: b(14.8), len: b(2.4), ph: 0.2, label: '05  3D / CGI' },
   { c: 0, r: 2, o: 6, kind: 'scene', scene: s5, a: b(18.9), len: b(2.6), ph: 0.3, label: '06  UI MOTION' },
   { c: 1, r: 2, o: 5, kind: 'code', label: '07  CREATIVE CODE' },
-  { c: 2, r: 2, o: 4, kind: 'scene', scene: s6, a: b(22.6), len: b(1.3), ph: 0.0, label: '08  GENERATIVE', zoom: 1.2, fx: 960, fy: 540 },
+  { c: 2, r: 2, o: 4, kind: 'scene', scene: s6, a: b(23.15), len: b(1.55), ph: 0.0, label: '08  GENERATIVE', zoom: 1.15, fx: 960, fy: 540 },
 ];
 
 const CODE = `// every frame is a pure function of time
@@ -106,7 +106,7 @@ function soundTile(ctx, t, x, y, w, h) {
 }
 
 function codeTile(ctx, t, x, y, w, h) {
-  ctx.fillStyle = PAL.ink;
+  ctx.fillStyle = '#171615';
   ctx.fillRect(x, y, w, h);
   ctx.font = mono(13, 500);
   ctx.letterSpacing = '0px';
@@ -159,7 +159,7 @@ function centerTile(ctx, t, x, y, w, h) {
 }
 
 function chip(ctx, t, tile, x, y, h) {
-  const p = prog(t, tile.t0 + 0.12, tile.t0 + 0.42);
+  const p = prog(t, tile.t0 + 0.04, tile.t0 + 0.24);
   if (p <= 0) return;
   const text = scramble(tile.label, p, tile.o * 13, t);
   ctx.font = mono(12, 600);

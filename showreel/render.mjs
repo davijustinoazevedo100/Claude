@@ -151,7 +151,7 @@ function encode() {
   const grain = opt('grain', '5');
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const a = [
-    '-y', '-framerate', String(FPS), '-i', path.join(frames, 'f_%05d.png'),
+    '-y', '-hide_banner', '-loglevel', 'error', '-nostats', '-framerate', String(FPS), '-i', path.join(frames, 'f_%05d.png'),
     ...(fs.existsSync(audio) ? ['-i', audio] : []),
     '-vf', `noise=c0s=${grain}:c0f=t+u,format=yuv420p`,
     '-c:v', 'libx264', '-preset', 'slow', '-crf', '15', '-profile:v', 'high', '-tune', 'animation',
