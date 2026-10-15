@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude — Motion Reel 2026</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas#out { position: absolute; inset: 0; margin: auto; max-width: 100vw; max-height: 100vh; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+</style>
+</head>
+<body>
+<canvas id="out"></canvas>
+<script type="module">
+  import * as R from './src/main.js';
+  window.REEL = R;
+  const params = new URLSearchParams(location.search);
+  R.init()
+    .then(() => {
+      window.__ready = true;
+      if (params.has('play')) R.playRealtime(params.get('audio') || null);
+    })
+    .catch((e) => {
+      window.__error = String((e && e.stack) || e);
+      console.error(e);
+    });
+</script>
+</body>
+</html>
