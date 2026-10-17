@@ -62,7 +62,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 public final class WaterWorld {
 	private static final WaterWorld INSTANCE = new WaterWorld();
 	static final int UBO_SLOT = 4096;
-	static final int UBO_SIZE = 3920;
+	static final int UBO_SIZE = 3952;
 	static final float PARTICLES_PER_CELL = 8.0F;
 	static final float SAND_POISSON = 0.3F;
 
@@ -77,6 +77,8 @@ public final class WaterWorld {
 	private static final int JOIN_DISTANCE = 16;
 	private static final int SYNC_INTERVAL = 30;
 	private static final int ECHO_TIMEOUT = 200;
+	private static final int BIOME_CHECK_TICKS = 40;
+	private static final int SHATTER_EFFECT_TICKS = 4;
 
 	public static final Matrix4f LEVEL_PROJECTION = new Matrix4f();
 
@@ -135,6 +137,7 @@ public final class WaterWorld {
 	private long lastFrameNanos;
 	private float simTime;
 	private int frameCounter;
+	private int ticks;
 	private int nextRegionId;
 	private int lastSteps;
 	private float lastDt;
@@ -626,7 +629,33 @@ public final class WaterWorld {
 			}
 		}
 		this.pendingFills.clear();
+		this.ticks++;
+		for (WaterRegion r : this.regions) {
+			this.tickIce(level, r);
+		}
 		this.sounds.tick(level);
+	}
+
+	/** Keeps each water region's snowy-biome flag fresh, and plays the breaking effect where entities shattered its ice. */
+	private void tickIce(ClientLevel level, WaterRegion r) {
+		if (r.material != Material.WATER) {
+			return;
+		}
+		int[] b = r.boxWorld;
+		if (!WaterSettings.freezing) {
+			r.coldBiome = false;
+		} else if (b != null && this.ticks >= r.nextBiomeCheck) {
+			r.nextBiomeCheck = this.ticks + BIOME_CHECK_TICKS;
+			double h = 1.0 / r.res;
+			r.coldBiome = IceEffects.coldBiome(level, BlockPos.containing((b[0] + b[3]) * 0.5 * h, (b[1] + b[4]) * 0.5 * h, (b[2] + b[5]) * 0.5 * h));
+		}
+		if (r.shatterCount > 0 && this.ticks >= r.nextShatterEffect) {
+			if (WaterSettings.shatterEffects) {
+				IceEffects.shatter(level, r.shatterAt[0], r.shatterAt[1], r.shatterAt[2]);
+			}
+			r.shatterCount = 0;
+			r.nextShatterEffect = this.ticks + SHATTER_EFFECT_TICKS;
+		}
 	}
 
 
@@ -940,7 +969,7 @@ public final class WaterWorld {
 			List<float[]> removals = r.takeRemovals();
 			int numSources = this.writeGlobals(mc, level, r, slot, regionDt, width, height, removals);
 			Desc ubo = Desc.ubo(this.uboRing, (long) slot * UBO_SLOT, UBO_SIZE);
-			r.record(cb, ubo, regionSteps, numSources, this.frameCounter, this.frameView, removals.size());
+			r.record(cb, ubo, regionSteps, numSources, this.frameCounter, removals.size());
 			(r.material.isGranular() ? sandBodies : waterBodies).add(new WaterRenderer.Body(r, ubo));
 		}
 		Vk.barrier(cb);
@@ -1067,6 +1096,7 @@ public final class WaterWorld {
 		}
 		putFloats(b, o + 3792, (float) (level.getMinY() - r.oy) * res - 8.0F, WaterRegion.KILL_MARGIN, 0.0F, 0.0F);
 		writeMaterialGlobals(b, o, r.material, res, dt);
+		writeIceGlobals(b, o, r.material, r.hasColdBlocks() || r.coldBiome, r.coldBiome, res, dt);
 		this.uboRing.flush(o, UBO_SIZE);
 		return sourceCount;
 	}
@@ -1142,6 +1172,27 @@ public final class WaterWorld {
 		float impactLogJ = (float) Math.log(Math.max(1.0F - WaterSettings.sandImpactCompression, 0.01F));
 		putFloats(b, o + 3904, WaterSettings.sandRestSpeed * res, WaterSettings.sandRestTime, WaterSettings.sandWakeAccel * WaterSettings.gravity * res * dt,
 			impactLogJ);
+	}
+
+	/**
+	 * Freezing (iceA) and breaking (iceB). Water touching ice (an ice block, or water that froze already) turns solid where
+	 * it is; in a snowy biome it also freezes from its surface. Ice melts again once nothing cold is left in the region, and
+	 * entities moving into it shatter it. The shaders roll per particle and step; one frozen particle makes its whole cell
+	 * ice, so the chances are scaled down by the particles per cell to give the cell-level rates the settings name.
+	 */
+	static void writeIceGlobals(ByteBuffer b, int o, Material material, boolean cold, boolean coldBiome, int res, float dt) {
+		boolean freezing = material == Material.WATER && WaterSettings.freezing && cold;
+		float front = Math.max(WaterSettings.freezeSpeed, 0.0F) * res * dt;
+		float surface = coldBiome ? Math.max(WaterSettings.coldBiomeFreezeRate, 0.0F) * dt : 0.0F;
+		float melt = Math.clamp(Math.max(WaterSettings.meltRate, 0.0F) * dt, 0.0F, 1.0F);
+		putFloats(b, o + 3920, freezing ? 1.0F : 0.0F, perParticle(front), perParticle(surface), melt);
+		putFloats(b, o + 3936, Math.max(WaterSettings.shatterRadius, 0.0F) * res, 0.0F, 0.0F, 0.0F);
+	}
+
+	/** The per-particle chance that gives a cell of PARTICLES_PER_CELL particles this chance of at least one. */
+	private static float perParticle(float cellChance) {
+		float c = Math.clamp(cellChance, 0.0F, 1.0F);
+		return c >= 1.0F ? 1.0F : (float) (1.0 - Math.pow(1.0 - c, 1.0 / PARTICLES_PER_CELL));
 	}
 
 	private static float wrap(double v) {

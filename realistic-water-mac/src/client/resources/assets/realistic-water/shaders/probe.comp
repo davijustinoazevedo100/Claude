@@ -1,36 +1,30 @@
 #version 450
 #include "common.glsl"
 layout(local_size_x = 1) in;
-layout(std430, binding = 1) readonly buffer Dens { int cellDens[]; };
-layout(std430, binding = 2) readonly buffer Flags { uint cellFlags[]; };
-layout(std430, binding = 3) buffer ViewState { uint viewBits[]; };
+layout(std430, binding = 1) readonly buffer Dens { float dens[]; };
+layout(std430, binding = 2) buffer ViewState { uint viewBits[]; };
 
-float densityAt(vec3 p) {
-    ivec3 c = ivec3(floor(p));
-    if (!inBox(c)) {
-        return 0.0;
-    }
-    int i = cellIndex(c);
-    if ((cellFlags[i] & 0xFFu) == CELL_SOLID) {
-        return -1.0;
-    }
-    return float(cellDens[i]) / FP_SCALE / G.simA.y;
+// Whether the camera is inside the water as drawn: the surface mesh's own density field (smoothed, and filled in where
+// the local player displaces the water) read at the eye. The view then switches to the underwater look exactly when the
+// drawn surface passes the camera; a raw per-cell estimate flickered between the two looks with every ripple near the
+// eyes while walking or swimming.
+float densAt(ivec3 p) {
+    return inFine(p) ? dens[fineIndex(p)] : 0.0;
 }
 
 void main() {
-    vec3 cam = G.camGrid.xyz;
-    float r = 0.6 * G.camGrid.w;
-    vec3 offsets[5] = vec3[](vec3(0.0), vec3(r, 0.0, 0.0), vec3(-r, 0.0, 0.0), vec3(0.0, 0.0, r), vec3(0.0, 0.0, -r));
-    float sum = 0.0;
-    float n = 0.0;
-    for (int k = 0; k < 5; k++) {
-        float d = densityAt(cam + offsets[k]);
-        if (d >= 0.0) {
-            sum += min(d, 1.0);
-            n += 1.0;
-        }
+    vec3 q = G.camGrid.xyz * float(G.fine.w) - 0.5;
+    if (any(lessThan(q, vec3(G.fineBoxMin.xyz) - 1.0)) || any(greaterThan(q, vec3(G.fineBoxMax.xyz)))) {
+        return;
     }
-    float density = n > 0.0 ? sum / n : 0.0;
-    atomicMax(viewBits[0], floatBitsToUint(smoothstep(0.35, 0.6, density)));
-    atomicMax(viewBits[1], floatBitsToUint(density));
+    ivec3 b = ivec3(floor(q));
+    vec3 f = q - vec3(b);
+    float d = 0.0;
+    for (int k = 0; k < 8; k++) {
+        ivec3 o = ivec3(k & 1, (k >> 1) & 1, (k >> 2) & 1);
+        vec3 w = mix(1.0 - f, f, vec3(o));
+        d += w.x * w.y * w.z * densAt(b + o);
+    }
+    atomicMax(viewBits[0], floatBitsToUint(d > G.surf.x ? 1.0 : 0.0));
+    atomicMax(viewBits[1], floatBitsToUint(clamp(d, 0.0, 4.0)));
 }

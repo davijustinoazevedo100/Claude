@@ -41,6 +41,20 @@ things the original doesn't have (see "Additions" below).
   the pattern moves with the lava and its relief catches the sunlight.
 - **Better foam**: foam lasts longer, gathers in islands and streaks with a bubbly texture that drifts with
   the current, and is lit by the sun.
+- **Freezing water**: water touching ice (ice, packed ice, blue ice or frosted ice blocks) freezes where it is, and the
+  frost spreads through the water touching it, so a splash or a waterfall stops in time as ice. In snowy biomes water
+  also freezes from its surface. Walking (or anything else moving) into frozen water shatters it like glass, with the
+  ice-breaking sound and shards. Once nothing cold is left nearby the ice slowly melts back into water. Tunable with
+  `/water set freezing|freezeSpeed|coldBiomeFreezeRate|meltRate|shatterRadius|shatterEffects <value>`
+  (`/water set coldBiomeFreezeRate 0` keeps water liquid in snowy biomes, `/water set freezing false` turns it all off).
+
+### Other fixes
+
+- Water shut in with no air (for example covered with glass) no longer churns, and no longer bursts out and lags the
+  game when the seal is broken: the solver used to ask shut-in water to spread out, which it can't, and the pressure
+  piled up.
+- The underwater look switches exactly when the drawn water surface passes the camera (it used to flicker near the
+  surface), and droplets right in front of the camera aren't drawn.
 
 The images in [screenshots](screenshots) come from the headless test renderer used during development (the
 mod's own simulation and shaders, with simple stand-in blocks instead of Minecraft's world).

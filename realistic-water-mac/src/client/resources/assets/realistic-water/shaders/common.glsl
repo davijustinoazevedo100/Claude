@@ -56,6 +56,8 @@ layout(std140, set = 0, binding = 0) uniform Globals {
     vec4 matC;
     vec4 matD;
     vec4 matE;
+    vec4 iceA;
+    vec4 iceB;
 } G;
 
 bool isSand() {
@@ -69,6 +71,16 @@ bool isLava() {
 bool isSlime() {
     return abs(G.matA.x - 3.0) < 0.5;
 }
+
+bool isWater() {
+    return G.matA.x < 0.5;
+}
+
+// Frozen water: its material id in the front pass, and the solid-grid value of ice blocks (cold, and solid like any other).
+#define ICE_MAT 0.2
+#define COLD_SOLID 3u
+#define FREEZING (G.iceA.x > 0.5)
+#define AIR_DIST_SEALED 64u
 
 #define NX G.dims.x
 #define NY G.dims.y

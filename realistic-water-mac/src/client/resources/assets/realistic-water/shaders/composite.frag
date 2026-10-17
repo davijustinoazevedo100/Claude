@@ -362,6 +362,50 @@ float foamLace(vec2 p, vec2 flow, float density, float footprint) {
     return sum;
 }
 
+// ---- ice: frozen water, milky white-blue inside, cracked, with a crisp glossy surface ----
+
+vec3 shadeAboveIce(vec2 uv, vec3 n, float fd, float ambient) {
+    vec3 P = viewPosAt(uv, fd);
+    vec3 V = normalize(-P);
+    n = dot(n, V) < 0.0 ? -n : n;
+    float footprint = pixelFootprint(fd);
+    vec3 nW = normalize(mat3(G.invView) * n);
+    vec3 W = G.misc.yzw + (G.invView * vec4(P, 0.0)).xyz;
+    vec3 an = abs(nW);
+    vec2 q = an.y > max(an.x, an.z) ? W.xz : (an.x > an.z ? W.zy : W.xy);
+
+    // Frost: a slightly uneven surface; cracks: big and small Voronoi walls.
+    vec3 bump = valueNoise(q * 7.0);
+    vec3 frostN = normalize(nW + 0.08 * vec3(bump.y, 0.0, bump.z));
+    vec3 nV = normalize(mat3(G.view) * frostN);
+    float detail = smoothstep(0.7, 2.5, 0.12 / max(footprint, 1e-5));
+    float cracks = (1.0 - smoothstep(0.0, 0.03, bubbleWalls(q * 1.4, 0x9e3779b9u))) * 0.8
+        + (1.0 - smoothstep(0.0, 0.025, bubbleWalls(q * 3.9 + 17.0, 0x7f4a7c15u))) * 0.35;
+    cracks = clamp(cracks, 0.0, 1.0) * detail;
+
+    float thickness = max(texture(thicknessTex, uv).r, 0.0);
+    float path = thickness * G.waterA.y;
+    vec2 ruv = clamp(uv + nV.xy * 0.02 * clamp(thickness, 0.0, 1.5) / max(fd, 1.0), vec2(0.0), vec2(1.0));
+    if (linearDepth(texture(sceneDepth, ruv).r) < fd) {
+        ruv = uv;
+    }
+    vec3 under = texture(sceneColor, ruv).rgb;
+    vec3 transmitted = under * exp(-vec3(1.25, 0.5, 0.2) * path);
+    float lit = clamp(dot(nV, normalize(G.sunDir.xyz)) * 0.5 + 0.5, 0.0, 1.0) * G.sunDir.w;
+    vec3 frost = vec3(0.66, 0.84, 1.0) * (0.3 + 0.35 * ambient + 0.45 * lit);
+    float cloud = 1.0 - exp(-1.2 * path - 0.15);
+    vec3 ice = transmitted * (1.0 - 0.8 * cloud) + frost * cloud;
+    ice = mix(ice, vec3(0.92, 0.97, 1.0) * (0.55 + 0.45 * ambient), cracks * 0.55);
+
+    vec3 Rv = reflect(-V, nV);
+    vec3 Rw = (G.invView * vec4(Rv, 0.0)).xyz;
+    float hit;
+    vec3 ssr = traceReflection(P + nV * 0.05, Rv, hit);
+    vec3 reflection = mix(skyColor(Rw), ssr, hit);
+    float F = 0.03 + 0.97 * pow(1.0 - clamp(dot(nV, V), 0.0, 1.0), 5.0);
+    return mix(ice, reflection, F * 0.8) + sunSpecular(nV, V, footprint) * 1.3;
+}
+
 vec3 shadeSurfaceFromBelow(vec2 uv, vec3 n, float fd, vec3 deep) {
     vec3 P = viewPosAt(uv, fd);
     vec3 V = normalize(-P);
@@ -396,6 +440,7 @@ void main() {
     bool hasFluid = fd > 0.0 && fd < sceneDist;
     bool underwater = viewState.x > 0.5 && !slimePass;
     bool matTagged = matId >= -0.5;
+    bool icy = waterPass && hasFluid && matTagged && abs(matId - ICE_MAT) < 0.08;
     if (hasFluid && matTagged) {
         if (abs(matId - pc.filterMat) > 0.25) {
             discard;
@@ -423,7 +468,8 @@ void main() {
         color = color * exp(-G.absorb.rgb * visible * G.misc.x) + deep * (1.0 - exp(-fog * visible));
     } else if (hasFluid) {
         color = lavaPass ? shadeAboveLava(uv, g.xyz, fd, ambient, mat.gba)
-            : slimePass ? shadeAboveSlime(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
+            : slimePass ? shadeAboveSlime(uv, g.xyz, fd, ambient)
+            : icy ? shadeAboveIce(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
         vec4 clip = G.proj * vec4(viewPosAt(uv, fd), 1.0);
         outDepth = clip.z / clip.w;
     }

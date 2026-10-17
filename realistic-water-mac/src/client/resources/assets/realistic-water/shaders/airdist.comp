@@ -1,0 +1,31 @@
+#version 450
+#include "common.glsl"
+layout(local_size_x = 256) in;
+layout(std430, binding = 1) readonly buffer Flags { uint cellFlags[]; };
+layout(std430, binding = 2) buffer AirDist { uint airDist[]; };
+
+// How far (in cells, through liquid) each liquid cell is from open air, relaxed in place a few passes per step and
+// capped at AIR_DIST_SEALED, which means sealed off. Open air is outside the active box or connected to it through
+// other air cells (free to cross); an empty cell inside sealed water is a gap between particles, not air, so it keeps
+// the value of the liquid around it. Cells start out sealed (the buffer is filled with the cap) and are proven open.
+const ivec3 NB[6] = ivec3[](ivec3(1, 0, 0), ivec3(-1, 0, 0), ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1), ivec3(0, 0, -1));
+
+void main() {
+    int bt = int(GID_U);
+    if (bt >= G.boxMin.w) {
+        return;
+    }
+    ivec3 c = boxCell(bt);
+    int i = cellIndex(c);
+    uint t = cellFlags[i] & 0xFFu;
+    if (t == CELL_SOLID) {
+        airDist[i] = AIR_DIST_SEALED;
+        return;
+    }
+    uint d = AIR_DIST_SEALED;
+    for (int k = 0; k < 6; k++) {
+        ivec3 nb = c + NB[k];
+        d = min(d, inBox(nb) ? airDist[cellIndex(nb)] : 0u);
+    }
+    airDist[i] = t == CELL_AIR ? d : min(d + 1u, AIR_DIST_SEALED);
+}

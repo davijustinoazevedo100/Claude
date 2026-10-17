@@ -135,6 +135,13 @@ public final class WaterSettings {
 	public static boolean lavaFlowSounds = true;
 	public static boolean lavaIgniteFlammables = true;
 
+	public static boolean freezing = true;
+	public static float freezeSpeed = 8.0F;
+	public static float coldBiomeFreezeRate = 1.5F;
+	public static float meltRate = 0.12F;
+	public static float shatterRadius = 0.35F;
+	public static boolean shatterEffects = true;
+
 	public static int slimeResolution = 8;
 	public static float slimeStiffness = 90.0F;
 	public static float slimePoisson = 0.38F;

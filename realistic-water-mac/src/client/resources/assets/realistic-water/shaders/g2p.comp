@@ -14,6 +14,7 @@ layout(std430, binding = 8) readonly buffer Pot { vec2 potential[]; };
 layout(std430, binding = 9) writeonly buffer WwDst { Particle wwDst[]; };
 layout(std430, binding = 10) readonly buffer WwCount { int wwCount[]; };
 layout(std430, binding = 11) readonly buffer Count { int cellCount[]; };
+layout(std430, binding = 12) readonly buffer IceCount { int iceCount[]; };
 layout(push_constant) uniform PC { ivec4 a; ivec4 b; } pc;
 
 #include "gridsample.glsl"
@@ -145,11 +146,64 @@ void emitWhitewater(uint id, vec3 x, vec3 v) {
     }
 }
 
-bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded) {
+// ---- ice ----
+
+#define C_SHATTER 16
+
+uint iceSeed;
+
+bool iceOrColdAround(ivec3 c) {
+    for (int k = 0; k < 7; k++) {
+        ivec3 nc = c + (k == 0 ? ivec3(0) : axisVec((k - 1) >> 1) * (((k - 1) & 1) == 0 ? 1 : -1));
+        if (!inGrid(nc)) {
+            continue;
+        }
+        int j = cellIndex(nc);
+        if (staticSolid[j] == COLD_SOLID || (inBox(nc) && iceCount[j] > 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool airAround(ivec3 c) {
+    for (int k = 0; k < 6; k++) {
+        ivec3 nc = c + axisVec(k >> 1) * ((k & 1) == 0 ? 1 : -1);
+        if (inBox(nc) && (cellFlags[cellIndex(nc)] & 0xFFu) == CELL_AIR) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Within reach of an entity: frozen water there breaks like glass, and liquid there doesn't freeze (no ice inside a player).
+bool nearEntity(vec3 x) {
+    float reach = G.iceB.x;
+    for (int e = 0; e < numEntities(); e++) {
+        if (all(greaterThanEqual(x, entMin(e) - reach)) && all(lessThanEqual(x, entMax(e) + reach))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Liquid freezes when ice (an ice block or water that froze already) touches it, and in a cold biome from its surface.
+bool freezes(vec3 x) {
+    if (!FREEZING || !isWater()) {
+        return false;
+    }
+    ivec3 c = ivec3(floor(x));
+    float roll = rand(iceSeed);
+    bool touch = (roll < G.iceA.y && iceOrColdAround(c)) || (roll < G.iceA.z && airAround(c));
+    return touch && !nearEntity(x);
+}
+
+bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded, out bool frozen) {
     xn = vec3(0.0);
     v = vec3(0.0);
     tag = 0.0;
     gridded = false;
+    frozen = false;
     if (i >= counters[pc.a.x]) {
         return false;
     }
@@ -160,6 +214,24 @@ bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded) {
     vec3 x = p.pos.xyz;
     v = p.vel.xyz;
     tag = p.pos.w;
+    iceSeed = hash(i * 2246822519u + uint(pc.a.w) * 3266489917u);
+    if (p.vel.w > 0.5 && isWater()) {
+        if (nearEntity(x)) {
+            atomicAdd(counters[C_SHATTER], 1u);
+            atomicAdd(counters[C_SHATTER + 1], uint(max(x.x, 0.0) * 16.0));
+            atomicAdd(counters[C_SHATTER + 2], uint(max(x.y, 0.0) * 16.0));
+            atomicAdd(counters[C_SHATTER + 3], uint(max(x.z, 0.0) * 16.0));
+            return false;
+        }
+        // Frozen in time: it stays where it is until something breaks it, or melts once no cold source is left.
+        if (FREEZING || rand(iceSeed) >= G.iceA.w) {
+            xn = x;
+            v = vec3(0.0);
+            frozen = true;
+            return true;
+        }
+        v = vec3(0.0);
+    }
     float maxSpeed = G.simB.x;
     gridded = inInnerBox(x);
     vec3 dx;
@@ -189,6 +261,10 @@ bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded) {
     if (nonFinite(xn) || nonFinite(v)) {
         return false;
     }
+    if (gridded && freezes(xn)) {
+        frozen = true;
+        v = vec3(0.0);
+    }
 
     float killMargin = G.killInfo.y;
     return !(any(lessThan(xn, vec3(-killMargin))) || any(greaterThanEqual(xn, vec3(NX, NY, NZ) + killMargin)) || xn.y < G.killInfo.x);
@@ -200,17 +276,18 @@ void main() {
     vec3 v;
     float tag;
     bool gridded;
-    bool alive = advance(i, xn, v, tag, gridded);
+    bool frozen;
+    bool alive = advance(i, xn, v, tag, gridded, frozen);
 
     uint total;
     uint slot = compactSlot(alive, total);
     uint o = compactReserve(uint(pc.a.y), total) + slot;
     bool written = alive && o < uint(G.caps.x);
     if (written) {
-        dst[o] = Particle(vec4(xn, tag), vec4(v, 0.0));
+        dst[o] = Particle(vec4(xn, tag), vec4(v, frozen ? 1.0 : 0.0));
     }
     compactStats(alive, length(v), written, xn, 0u);
-    if (written && pc.b.y != 0 && gridded) {
+    if (written && pc.b.y != 0 && gridded && !frozen) {
         emitWhitewater(i, xn, v);
     }
 }

@@ -16,6 +16,8 @@ import org.lwjgl.vulkan.VkFormatProperties;
 
 public final class WaterRenderer implements AutoCloseable {
 	private static final int RGBA32F = VK10.VK_FORMAT_R32G32B32A32_SFLOAT;
+	/** Droplets closer to the camera than this (blocks) aren't drawn: in first person they'd be blobs filling the view. */
+	private static final float DROPLET_NEAR = 0.5F;
 
 	private final int thicknessFormat;
 	private final GraphicsProgram meshFront;
@@ -48,7 +50,7 @@ public final class WaterRenderer implements AutoCloseable {
 		GraphicsProgram.State add = new GraphicsProgram.State(this.thicknessFormat, VK10.VK_FORMAT_UNDEFINED, false, false, VK10.VK_COMPARE_OP_ALWAYS,
 			GraphicsProgram.Blend.ADD);
 		Map<String, String> droplets = Map.of("DROPLETS", "1", "VIEW_BINDING", "3");
-		this.meshFront = new GraphicsProgram("mesh.vert", "mesh_front.frag", Map.of(), front, U, S, S, S, S);
+		this.meshFront = new GraphicsProgram("mesh.vert", "mesh_front.frag", Map.of(), front, U, S, S, S, S, S);
 		this.dropletFront = new GraphicsProgram("particle.vert", "droplet_front.frag", droplets, front, U, S, S, S);
 		this.meshThickness = new GraphicsProgram("mesh.vert", "mesh_thickness.frag", Map.of(), add, U, S, S, S, T);
 		this.dropletThickness = new GraphicsProgram("particle.vert", "droplet_thickness.frag", droplets, add, U, S, S, S, T);
@@ -116,6 +118,7 @@ public final class WaterRenderer implements AutoCloseable {
 			WaterRegion r = body.region();
 			r.mesher.build(cb, body.ubo(), r.currentParticles(), r.counters, WaterRegion.C_FLUID + r.cur, r.args, r.staticSolid, r.mesher.fineBox(r.box),
 				WaterSettings.sheetFill);
+			r.recordViewProbe(cb, body.ubo(), view);
 		}
 
 		VkTex.copy(cb, mainDepthImage, this.sceneDepth.image, VK10.VK_IMAGE_ASPECT_DEPTH_BIT, w, h);
@@ -128,10 +131,11 @@ public final class WaterRenderer implements AutoCloseable {
 		for (Body body : bodies) {
 			WaterRegion r = body.region();
 			float radius = WaterSettings.particleRadius / r.res;
-			this.meshFront.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, Desc.ssbo(r.gridVelocity()));
+			this.meshFront.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, Desc.ssbo(r.gridVelocity()),
+				Desc.ssbo(r.iceCells()));
 			this.meshFront.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DRAW_ARGS_OFFSET);
 			this.dropletFront.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.mesher.densA), view);
-			this.dropletFront.push(cb, Program.f(radius), Program.f(0.0F), Program.f(0.15F));
+			this.dropletFront.push(cb, Program.f(radius), Program.f(0.0F), Program.f(DROPLET_NEAR));
 			this.dropletFront.drawIndirect(cb, r.args, WaterRegion.ARGS_FLUID_DRAW);
 		}
 		GraphicsProgram.end(cb);
@@ -143,7 +147,7 @@ public final class WaterRenderer implements AutoCloseable {
 			this.meshThickness.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, depthTex);
 			this.meshThickness.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DRAW_ARGS_OFFSET);
 			this.dropletThickness.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.mesher.densA), view, depthTex);
-			this.dropletThickness.push(cb, Program.f(radius), Program.f(0.0F), Program.f(0.15F));
+			this.dropletThickness.push(cb, Program.f(radius), Program.f(0.0F), Program.f(DROPLET_NEAR));
 			this.dropletThickness.drawIndirect(cb, r.args, WaterRegion.ARGS_FLUID_DRAW);
 		}
 		GraphicsProgram.end(cb);

@@ -18,5 +18,6 @@ void main() {
     vec4 clip = G.proj * vec4(pos, 1.0);
     gl_FragDepth = clip.z / clip.w;
     outG = vec4(n, -pos.z);
-    outMat = vec4(G.matA.x, isSlime() ? vec3(0.0) : vVel);
+    bool icy = isWater() && vData.y > 0.5;
+    outMat = vec4(icy ? ICE_MAT : G.matA.x, isSlime() || icy ? vec3(0.0) : vVel);
 }

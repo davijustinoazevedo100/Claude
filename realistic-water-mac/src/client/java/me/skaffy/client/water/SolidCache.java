@@ -22,9 +22,13 @@ final class SolidCache {
 	static final byte EMPTY = 0;
 	static final byte FULL = 1;
 	static final byte PARTIAL = 2;
-	/** Cell value of a bouncy solid in the uploaded grid (any non-zero value is solid; slime bounces off this one). */
+	/** Cell values in the uploaded grid: any non-zero value is solid; slime bounces off bouncy ones, water freezes on cold ones. */
 	static final int BOUNCY_SOLID = 2;
-	private static final Set<Block> BOUNCY = bouncyBlocks();
+	static final int COLD_SOLID = 3;
+	private static final byte TAG_BOUNCY = 1;
+	private static final byte TAG_COLD = 2;
+	private static final Set<Block> BOUNCY = blocks("ANVIL", "CHIPPED_ANVIL", "DAMAGED_ANVIL");
+	private static final Set<Block> COLD = blocks("ICE", "PACKED_ICE", "BLUE_ICE", "FROSTED_ICE");
 
 	final int res;
 	final boolean ignoreSand;
@@ -34,19 +38,20 @@ final class SolidCache {
 	private static final class Section {
 		final byte[] kind = new byte[4096];
 		final long[] @Nullable [] partial = new long[4096][];
-		final boolean[] bouncy = new boolean[4096];
+		final byte[] tag = new byte[4096];
 	}
 
-	private static Set<Block> bouncyBlocks() {
+	// Vanilla blocks by field name, so a renamed one only switches its effect off instead of failing to load the class.
+	private static Set<Block> blocks(String... names) {
 		Set<Block> out = new HashSet<>();
-		try {
-			for (Block b : new Block[]{Blocks.ANVIL, Blocks.CHIPPED_ANVIL, Blocks.DAMAGED_ANVIL}) {
-				if (b != null) {
+		for (String name : names) {
+			try {
+				if (Blocks.class.getField(name).get(null) instanceof Block b) {
 					out.add(b);
 				}
+			} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+				RealisticWater.LOGGER.warn("Realistic Water: block {} not found", name);
 			}
-		} catch (LinkageError e) {
-			RealisticWater.LOGGER.warn("Realistic Water: anvils not found, slime won't bounce off them", e);
 		}
 		return out;
 	}
@@ -77,9 +82,9 @@ final class SolidCache {
 		int i = local(pos.getX(), pos.getY(), pos.getZ());
 		byte oldKind = s.kind[i];
 		long[] oldBits = s.partial[i];
-		boolean oldBouncy = s.bouncy[i];
+		byte oldTag = s.tag[i];
 		this.voxelizeBlock(level, pos, level.getBlockState(pos), s, i);
-		return oldKind != s.kind[i] || oldBouncy != s.bouncy[i] || (s.kind[i] == PARTIAL && !java.util.Arrays.equals(oldBits, s.partial[i]));
+		return oldKind != s.kind[i] || oldTag != s.tag[i] || (s.kind[i] == PARTIAL && !java.util.Arrays.equals(oldBits, s.partial[i]));
 	}
 
 	private @Nullable Section section(ClientLevel level, int sx, int sy, int sz) {
@@ -120,7 +125,8 @@ final class SolidCache {
 
 	private void voxelizeBlock(ClientLevel level, BlockPos pos, BlockState state, Section s, int i) {
 		s.partial[i] = null;
-		s.bouncy[i] = !state.isAir() && BOUNCY.contains(state.getBlock());
+		Block block = state.isAir() ? null : state.getBlock();
+		s.tag[i] = block == null ? 0 : BOUNCY.contains(block) ? TAG_BOUNCY : COLD.contains(block) ? TAG_COLD : 0;
 		boolean skip = state.isAir() || (this.ignoreSand && state.getBlock() instanceof RealisticSandBlock);
 		VoxelShape shape = skip ? null : state.getCollisionShape(level, pos);
 		if (shape == null || shape.isEmpty()) {
@@ -168,7 +174,7 @@ final class SolidCache {
 			int i = local(bx, by, bz);
 			kind = s.kind[i];
 			bits = s.partial[i];
-			solid = s.bouncy[i] ? BOUNCY_SOLID : 1;
+			solid = s.tag[i] == TAG_BOUNCY ? BOUNCY_SOLID : s.tag[i] == TAG_COLD ? COLD_SOLID : 1;
 		}
 		int r = this.res;
 		for (int k = 0; k < r; k++) {

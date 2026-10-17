@@ -6,6 +6,7 @@ layout(std430, binding = 2) buffer Accum { int accum[]; };
 layout(std430, binding = 3) buffer Count { int cellCount[]; };
 layout(std430, binding = 4) buffer Dens { int cellDens[]; };
 layout(std430, binding = 5) readonly buffer Counters { uint counters[]; };
+layout(std430, binding = 6) buffer IceCount { int iceCount[]; };
 layout(push_constant) uniform PC { ivec4 a; ivec4 b; } pc;
 
 void splat(int comp, vec3 x, float value) {
@@ -39,6 +40,15 @@ void main() {
     vec3 x = p.pos.xyz;
     vec3 v = p.vel.xyz;
     if (p.pos.w < 0.0 || !inInnerBox(x)) {
+        return;
+    }
+    if (p.vel.w > 0.5 && isWater()) {
+        // Ice: still water for the cell counts (and the world's blocks), but its cells become solid in classify.
+        ivec3 iceCell = ivec3(floor(x));
+        if (inBox(iceCell)) {
+            atomicAdd(cellCount[cellIndex(iceCell)], 1);
+            atomicAdd(iceCount[cellIndex(iceCell)], 1);
+        }
         return;
     }
     splat(0, x, v.x);

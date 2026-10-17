@@ -36,7 +36,9 @@ import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
 public final class Vk {
 	public static final int STAGE_ALL = 0x00010000;
 	public static final int ACCESS_READ_WRITE = 0x00008000 | 0x00010000;
-	public static final int FRAME_RING = 3;
+	// Per-frame CPU-written data (uniforms, emitters, readbacks) cycles through this many slots. One more than the
+	// frames Minecraft keeps in flight, so a GPU running behind (MoltenVK queues deeper) never reads a slot being rewritten.
+	public static final int FRAME_RING = 4;
 	private static final int POOL_SETS = 512;
 
 	private static @Nullable VulkanDevice device;

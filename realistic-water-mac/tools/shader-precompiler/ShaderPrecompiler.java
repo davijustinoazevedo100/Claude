@@ -42,7 +42,7 @@ public final class ShaderPrecompiler {
 			"g2p", "ww_update", "inflow", "probe", "shift", "remove", "merge", "blockfill", "mpm_clear", "mpm_p2g", "mpm_grid", "mpm_g2p",
 			"mg_flags0", "mg_coarsen", "mg_smooth", "mg_restrict", "mg_prolong", "cg_init", "cg_apply", "cg_dot", "cg_reduce", "cg_update",
 			"cg_direction", "mg_coarse", "fine_clear", "blur", "nets_vertices", "nets_quads", "mesh_args", "sheet_fill", "zb_splat", "zb_field",
-			"grain_cull", "viscosity"}) {
+			"grain_cull", "viscosity", "airdist"}) {
 			compute(name + ".comp");
 		}
 		compute("blockfill.comp", "MPM", "1");

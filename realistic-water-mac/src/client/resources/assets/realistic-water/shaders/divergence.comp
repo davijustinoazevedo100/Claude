@@ -6,6 +6,7 @@ layout(std430, binding = 2) readonly buffer Flags { uint cellFlags[]; };
 layout(std430, binding = 3) readonly buffer Dens { int cellDens[]; };
 layout(std430, binding = 4) writeonly buffer Div { float div[]; };
 layout(std430, binding = 5) buffer Pressure { float pressure[]; };
+layout(std430, binding = 6) readonly buffer AirDist { uint airDist[]; };
 
 void main() {
     int bt = int(GID_U);
@@ -22,7 +23,12 @@ void main() {
     float d = vel[faceIndex(0, c + ivec3(1, 0, 0))] - vel[faceIndex(0, c)]
             + vel[faceIndex(1, c + ivec3(0, 1, 0))] - vel[faceIndex(1, c)]
             + vel[faceIndex(2, c + ivec3(0, 0, 1))] - vel[faceIndex(2, c)];
+    // The volume correction spreads out water that got denser than at rest, which only works where it can rise into
+    // air. Water sealed off from air (shut in glass) can't: asking it to anyway made the pressure system unsolvable, so
+    // the water churned while shut in and the pressure piled up until it burst out when the seal broke.
     float rho = float(cellDens[i]) / FP_SCALE / G.simA.y;
-    float target = G.simA.z * max(rho - 1.0, 0.0);
+    bool sealed = airDist[i] >= AIR_DIST_SEALED;
+    float target = sealed ? 0.0 : G.simA.z * max(rho - 1.0, 0.0);
     div[i] = target - d;
+    pressure[i] = clamp(pressure[i], -4096.0, 4096.0);
 }
