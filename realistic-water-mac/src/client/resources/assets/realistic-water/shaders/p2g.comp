@@ -42,8 +42,9 @@ void main() {
     if (p.pos.w < 0.0 || !inInnerBox(x)) {
         return;
     }
-    if (p.vel.w > 0.5 && isWater()) {
-        // Ice: still water for the cell counts (and the world's blocks), but its cells become solid in classify.
+    if (p.vel.w > 0.5 && canSet()) {
+        // Ice, or honey nobody has touched: still liquid for the cell counts (and the world's blocks), but its cells become
+        // solid in classify.
         ivec3 iceCell = ivec3(floor(x));
         if (inBox(iceCell)) {
             atomicAdd(cellCount[cellIndex(iceCell)], 1);

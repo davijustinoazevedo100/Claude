@@ -42,7 +42,12 @@ public final class WaterRegion implements AutoCloseable {
 	private static final int INITIAL_PARTICLES = 262_144;
 	private static final int INITIAL_WHITEWATER = 262_144;
 
-	public record Emitter(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, float vx, float vy, float vz) {
+	/** A box of new particles; loose honey starts out running instead of holding the shape of the block it was placed as. */
+	public record Emitter(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, float vx, float vy, float vz, boolean loose) {
+		public Emitter(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, float vx, float vy, float vz) {
+			this(minX, minY, minZ, maxX, maxY, maxZ, vx, vy, vz, false);
+		}
+
 		int[] lattice(int res) {
 			return new int[]{
 				Math.max(1, (int) Math.round((this.maxX - this.minX) * res * 2.0)),
@@ -668,7 +673,7 @@ public final class WaterRegion implements AutoCloseable {
 				.putFloat(o + 8, (float) ((e.minZ() - this.oz) * r)).putFloat(o + 12, 0);
 			buf.putFloat(o + 16, (float) ((e.maxX() - this.ox) * r)).putFloat(o + 20, (float) ((e.maxY() - this.oy) * r))
 				.putFloat(o + 24, (float) ((e.maxZ() - this.oz) * r)).putFloat(o + 28, 0);
-			buf.putFloat(o + 32, e.vx() * r).putFloat(o + 36, e.vy() * r).putFloat(o + 40, e.vz() * r).putFloat(o + 44, 0);
+			buf.putFloat(o + 32, e.vx() * r).putFloat(o + 36, e.vy() * r).putFloat(o + 40, e.vz() * r).putFloat(o + 44, e.loose() ? 1.0F : 0.0F);
 			buf.putInt(o + 48, total).putInt(o + 52, lattice[0]).putInt(o + 56, lattice[1]).putInt(o + 60, lattice[2]);
 			total += count;
 			n++;
@@ -1025,6 +1030,9 @@ public final class WaterRegion implements AutoCloseable {
 	private static final int AIR_DIST_SEALED = 64;
 
 	private int viscositySweeps() {
+		if (this.material == Material.HONEY) {
+			return WaterSettings.honeyViscosity > 0.0F ? Math.max(0, WaterSettings.honeyViscositySweeps) : 0;
+		}
 		return this.material == Material.LAVA && WaterSettings.lavaViscosity > 0.0F ? Math.max(0, WaterSettings.lavaViscositySweeps) : 0;
 	}
 

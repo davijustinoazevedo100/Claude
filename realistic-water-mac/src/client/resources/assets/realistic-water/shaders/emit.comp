@@ -42,6 +42,8 @@ void main() {
     if (o >= uint(G.caps.x)) {
         return;
     }
-    float tag = isSand() ? 0.001 + 0.998 * rand(seed) : 0.0;
+    // Sand and slime particles keep a random number of their own (grain looks, how long slime clings to a ceiling); honey
+    // starts out set, holding the shape it was placed in, unless the emitter says it comes loose (vel.w).
+    float tag = isSand() || isSlime() ? 0.001 + 0.998 * rand(seed) : (isHoney() && e.vel.w < 0.5 ? 1.0 : 0.0);
     dst[o] = Particle(vec4(p, 0.0), vec4(e.vel.xyz, tag));
 }

@@ -30,10 +30,17 @@ things the original doesn't have (see "Additions" below).
 
 ### Additions
 
-- **Realistic Slime** (Natural Blocks tab, next to Realistic Sand): an elastic jelly cube simulated with MPM.
-  It sticks to the blocks it touches (walls, floors, ceilings) and wobbles, but bounces off anvils. Spawn one
-  in front of you with `/water slime [size]`, remove all with `/water remove slime`. Tunable with
-  `/water set slimeStiffness|slimeDamping|slimeBounce|slimeGrip <value>`.
+- **Realistic Slime** (Natural Blocks tab, next to Realistic Sand): a vivid green jelly cube simulated with MPM,
+  thick and wobbly. It sticks to walls; on the ground it just rests (and bounces when it lands hard, harder off
+  anvils); stuck under a ceiling it hangs on for a few seconds, then sags, peels off and drops in one piece. The
+  block is solid, so you can stand on it, and anything pushing into it (mobs, pistons) shoves and squeezes it
+  without tearing it apart. Spawn one in front of you with `/water slime [size]`, remove all with
+  `/water remove slime`. Tunable with
+  `/water set slimeStiffness|slimeDamping|slimeBounce|slimeFloorBounce|slimeGrip|slimeCeilingHold <value>`.
+- **Realistic Honey** (next to Realistic Slime): amber honey that holds the shape of the block until something
+  disturbs it: walking into it, or a piston nudging it, makes the whole lump come apart and run as a very thick,
+  slow liquid that clings to walls. `/water honey [size]` drops a lump of running honey, `/water remove honey`
+  removes it. Tunable with `/water set honeyViscosity|honeyMaxSpeed|honeyBreakSpeed|honeyBreakRadius <value>`.
 - **Slow, thick lava**: lava now has real viscosity (an implicit viscosity solve on the grid with no-slip walls),
   so it creeps down walls and spreads in thick lobes instead of falling at a fixed speed
   (`lavaViscosity`, `lavaViscositySweeps`, `lavaMaxSpeed`).

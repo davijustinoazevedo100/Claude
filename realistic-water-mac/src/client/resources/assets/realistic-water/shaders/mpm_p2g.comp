@@ -21,9 +21,11 @@ void main() {
     }
     mat3 C = mat3(0.0);
     mat3 tau = mat3(0.0);
+    float pin = 1.0;
     if (p.pos.w >= 0.5) {
         int o = int(i) * STATE_STRIDE;
         C = LOAD_MAT(state, o);
+        pin = isSlime() && state[o + STATE_PIN] > 0.5 ? PIN_WEIGHT : 1.0;
         int t = o + STATE_TAU;
         tau = mat3(state[t], state[t + 3], state[t + 4], state[t + 3], state[t + 1], state[t + 5], state[t + 4], state[t + 5], state[t + 2]);
     }
@@ -34,7 +36,9 @@ void main() {
     } else if (squeeze < 0.0) {
         tau += MPM_IMPACT_VISCOSITY / MPM_VOLUME * squeeze * mat3(1.0);
     }
-    mat3 affine = -DT * MPM_VOLUME * 4.0 * tau + C;
+    // Momentum is the particle's velocity field (weighted by its mass) plus the impulse of its stress, which doesn't scale
+    // with mass: a pinned particle weighs heavily on the grid but pulls on it like any other.
+    mat3 stress = -DT * MPM_VOLUME * 4.0 * tau;
     vec3 v = p.vel.xyz;
     Stencil s = stencil(x);
     for (int k = 0; k < 3; k++) {
@@ -46,9 +50,9 @@ void main() {
                 }
                 float w = s.w[ii].x * s.w[j].y * s.w[k].z;
                 vec3 dpos = vec3(ii, j, k) - s.fx;
-                vec3 mom = w * (v + affine * dpos);
+                vec3 mom = w * (pin * (v + C * dpos) + stress * dpos);
                 int n = 4 * cellIndex(c);
-                atomicAdd(grid[n], int(round(w * MASS_FP)));
+                atomicAdd(grid[n], int(round(pin * w * MASS_FP)));
                 atomicAdd(grid[n + 1], int(round(mom.x * MOM_FP)));
                 atomicAdd(grid[n + 2], int(round(mom.y * MOM_FP)));
                 atomicAdd(grid[n + 3], int(round(mom.z * MOM_FP)));

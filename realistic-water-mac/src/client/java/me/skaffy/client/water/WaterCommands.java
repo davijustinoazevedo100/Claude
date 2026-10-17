@@ -49,6 +49,9 @@ public final class WaterCommands {
 			.then(literal("slime")
 				.executes(c -> ball(c, 1, Material.SLIME))
 				.then(argument("size", IntegerArgumentType.integer(1, 8)).executes(c -> ball(c, IntegerArgumentType.getInteger(c, "size"), Material.SLIME))))
+			.then(literal("honey")
+				.executes(c -> ball(c, 1, Material.HONEY))
+				.then(argument("size", IntegerArgumentType.integer(1, 8)).executes(c -> ball(c, IntegerArgumentType.getInteger(c, "size"), Material.HONEY))))
 			.then(literal("remove")
 				.executes(c -> {
 					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.WATER);
@@ -68,6 +71,11 @@ public final class WaterCommands {
 				.then(literal("slime").executes(c -> {
 					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.SLIME);
 					c.getSource().sendFeedback(Component.literal("Removing all realistic slime around you"));
+					return 1;
+				}))
+				.then(literal("honey").executes(c -> {
+					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.HONEY);
+					c.getSource().sendFeedback(Component.literal("Removing all realistic honey around you"));
 					return 1;
 				})))
 			.then(literal("set")
@@ -93,12 +101,14 @@ public final class WaterCommands {
 		var player = c.getSource().getPlayer();
 		Vec3 center = player.getEyePosition().add(player.getLookAngle().scale(size + 3.0));
 		double half = size * 0.5;
+		// Dropped honey comes down running; honey placed as a block holds its shape until something disturbs it.
 		WaterWorld.get().addEmitter(new WaterRegion.Emitter(
-			center.x - half, center.y - half, center.z - half, center.x + half, center.y + half, center.z + half, 0, 0, 0), material);
+			center.x - half, center.y - half, center.z - half, center.x + half, center.y + half, center.z + half, 0, 0, 0, material == Material.HONEY), material);
 		String name = switch (material) {
 			case SAND -> "sand";
 			case LAVA -> "lava";
 			case SLIME -> "slime";
+			case HONEY -> "honey";
 			default -> "water";
 		};
 		c.getSource().sendFeedback(Component.literal("Dropped a " + size + "^3 block cube of " + name));

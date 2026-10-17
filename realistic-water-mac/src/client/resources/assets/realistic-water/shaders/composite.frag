@@ -244,35 +244,70 @@ vec3 shadeAboveLava(vec2 uv, vec3 n, float fd, float ambient, vec3 flow) {
 
 // ---- slime: a clear green jelly, coloured by the light it scatters on the way through ----
 
+// What lies behind a gel, bent by its surface: the scene color and how far the light travels inside it.
+vec3 gelBehind(vec2 uv, vec3 n, float fd, float maxThickness, out float path) {
+    float thickness = max(texture(thicknessTex, uv).r, 0.0);
+    vec2 offset = n.xy * G.waterA.z * clamp(thickness, 0.0, maxThickness) / max(fd, 1.0);
+    vec2 ruv = clamp(uv + offset, vec2(0.0), vec2(1.0));
+    if (linearDepth(texture(sceneDepth, ruv).r) < fd) {
+        ruv = uv;
+    }
+    path = thickness * G.waterA.y;
+    return texture(sceneColor, ruv).rgb;
+}
+
+vec3 gelReflection(vec3 P, vec3 V, vec3 n, float footprint, float strength) {
+    vec3 Rv = reflect(-V, n);
+    vec3 Rw = (G.invView * vec4(Rv, 0.0)).xyz;
+    float hit;
+    vec3 ssr = traceReflection(P + n * 0.05, Rv, hit);
+    float F = 0.04 + 0.96 * pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 5.0);
+    return mix(skyColor(Rw), ssr, hit) * F * strength;
+}
+
+// Slime: a vivid green jelly, a bright see-through skin around a deeper green core like a slime block's, with gooey lumps
+// on the surface and glossy highlights.
 vec3 shadeAboveSlime(vec2 uv, vec3 n, float fd, float ambient) {
     vec3 P = viewPosAt(uv, fd);
     vec3 V = normalize(-P);
     n = dot(n, V) < 0.0 ? -n : n;
     float footprint = pixelFootprint(fd);
-    float thickness = max(texture(thicknessTex, uv).r, 0.0);
-    vec2 offset = n.xy * G.waterA.z * clamp(thickness, 0.0, 1.5) / max(fd, 1.0);
-    vec2 ruv = clamp(uv + offset, vec2(0.0), vec2(1.0));
-    if (linearDepth(texture(sceneDepth, ruv).r) < fd) {
-        ruv = uv;
-    }
-    float path = thickness * G.waterA.y;
-    vec3 under = texture(sceneColor, ruv).rgb;
+    vec3 W = G.misc.yzw + (G.invView * vec4(P, 0.0)).xyz;
+    vec3 nW = normalize(mat3(G.invView) * n);
+    vec3 an = abs(nW);
+    vec2 q = an.y > max(an.x, an.z) ? W.xz : (an.x > an.z ? W.zy : W.xy);
+    vec3 lump = valueNoise(q * 3.5) * 0.6 + valueNoise(q * 9.0) * 0.4;
+    float detail = smoothstep(0.7, 2.5, 0.08 / max(footprint, 1e-5));
+    n = normalize(mat3(G.view) * normalize(nW + 0.14 * detail * vec3(lump.y, 0.0, lump.z)));
+
+    float path;
+    vec3 under = gelBehind(uv, n, fd, 1.5, path);
     vec3 transmitted = under * exp(-G.absorb.rgb * path);
-    // Light scattered inside the gel: brighter on the side facing the sun, deeper green where it is thick.
     vec3 L = normalize(G.sunDir.xyz);
-    float wrapLit = clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0) * G.sunDir.w;
-    vec3 body = G.scatter.rgb * (0.3 * ambient + 0.25 + 0.75 * wrapLit);
+    float light = 0.3 * ambient + 0.3 + 0.7 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0) * G.sunDir.w;
+    vec3 body = mix(G.scatter.rgb, G.scatter.rgb * vec3(0.3, 0.55, 0.25), smoothstep(0.35, 0.9, path)) * light;
     vec3 scattered = body * (1.0 - exp(-G.scatter.w * path));
     float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.0);
-    vec3 jelly = transmitted + scattered + G.scatter.rgb * vec3(1.2, 1.0, 1.4) * rim * 0.35 * (0.4 + 0.6 * ambient);
+    vec3 jelly = transmitted + scattered + G.scatter.rgb * vec3(1.1, 1.0, 1.2) * rim * 0.45 * (0.4 + 0.6 * ambient);
+    return jelly + gelReflection(P, V, n, footprint, 0.8) + sunSpecular(n, V, footprint) * 1.3;
+}
 
-    vec3 Rv = reflect(-V, n);
-    vec3 Rw = (G.invView * vec4(Rv, 0.0)).xyz;
-    float hit;
-    vec3 ssr = traceReflection(P + n * 0.05, Rv, hit);
-    vec3 reflection = mix(skyColor(Rw), ssr, hit);
-    float F = 0.03 + 0.97 * pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 5.0);
-    return mix(jelly, reflection, F * 0.7) + sunSpecular(n, V, footprint);
+// Honey: clear amber that deepens to orange where it is thick, a golden glow where light threads through the thin
+// edges, strong refraction and glossy highlights.
+vec3 shadeAboveHoney(vec2 uv, vec3 n, float fd, float ambient) {
+    vec3 P = viewPosAt(uv, fd);
+    vec3 V = normalize(-P);
+    n = dot(n, V) < 0.0 ? -n : n;
+    float footprint = pixelFootprint(fd);
+    float path;
+    vec3 under = gelBehind(uv, n, fd, 2.0, path);
+    vec3 transmitted = under * exp(-G.absorb.rgb * path) * 1.15;
+    vec3 L = normalize(G.sunDir.xyz);
+    float light = 0.35 * ambient + 0.25 + 0.8 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0) * G.sunDir.w;
+    vec3 scattered = G.scatter.rgb * light * (1.0 - exp(-G.scatter.w * path));
+    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 1.5);
+    vec3 edge = vec3(1.0, 0.78, 0.25) * rim * 0.55 * (0.4 + 0.6 * ambient) * exp(-1.5 * path);
+    return transmitted + scattered + edge + gelReflection(P, V, n, footprint, 0.9) + sunSpecular(n, V, footprint) * 1.2;
 }
 
 vec3 shadeAboveWater(vec2 uv, vec3 n, float fd, float sceneDist, float ambient) {
@@ -433,12 +468,13 @@ void main() {
     float matId = mat.r;
     bool lavaPass = abs(pc.filterMat - 2.0) < 0.5;
     bool slimePass = abs(pc.filterMat - 3.0) < 0.5;
-    bool waterPass = !lavaPass && !slimePass;
+    bool honeyPass = abs(pc.filterMat - 4.0) < 0.5;
+    bool waterPass = !lavaPass && !slimePass && !honeyPass;
     vec4 foam = waterPass ? texture(foamTex, uv) : vec4(0.0);
     float sceneDev = texture(sceneDepth, uv).r;
     float sceneDist = linearDepth(sceneDev);
     bool hasFluid = fd > 0.0 && fd < sceneDist;
-    bool underwater = viewState.x > 0.5 && !slimePass;
+    bool underwater = viewState.x > 0.5 && !slimePass && !honeyPass;
     bool matTagged = matId >= -0.5;
     bool icy = waterPass && hasFluid && matTagged && abs(matId - ICE_MAT) < 0.08;
     if (hasFluid && matTagged) {
@@ -469,6 +505,7 @@ void main() {
     } else if (hasFluid) {
         color = lavaPass ? shadeAboveLava(uv, g.xyz, fd, ambient, mat.gba)
             : slimePass ? shadeAboveSlime(uv, g.xyz, fd, ambient)
+            : honeyPass ? shadeAboveHoney(uv, g.xyz, fd, ambient)
             : icy ? shadeAboveIce(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
         vec4 clip = G.proj * vec4(viewPosAt(uv, fd), 1.0);
         outDepth = clip.z / clip.w;

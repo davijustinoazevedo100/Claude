@@ -16,7 +16,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * Marks where the simulated jelly is, in eighths of a block like Realistic Sand. The client draws and simulates the
- * slime itself; the block only keeps it in the world (and lets players target and break it).
+ * slime itself; the block keeps it in the world, lets players target and break it, and is solid like a slime block, so
+ * walking into or onto it doesn't tear the jelly apart.
  */
 public class RealisticSlimeBlock extends Block {
 	public static final int MAX_LAYERS = 8;
@@ -44,7 +45,7 @@ public class RealisticSlimeBlock extends Block {
 
 	@Override
 	protected VoxelShape getCollisionShape(final BlockState state, final BlockGetter level, final BlockPos pos, final CollisionContext context) {
-		return Shapes.empty();
+		return SHAPES[state.getValue(LAYERS)];
 	}
 
 	@Override
@@ -59,7 +60,7 @@ public class RealisticSlimeBlock extends Block {
 
 	@Override
 	protected boolean isPathfindable(final BlockState state, final PathComputationType type) {
-		return true;
+		return false;
 	}
 
 	@Override

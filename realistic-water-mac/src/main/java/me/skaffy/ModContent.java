@@ -1,5 +1,6 @@
 package me.skaffy;
 
+import me.skaffy.block.RealisticHoneyBlock;
 import me.skaffy.block.RealisticLavaBlock;
 import me.skaffy.block.RealisticSandBlock;
 import me.skaffy.block.RealisticSlimeBlock;
@@ -107,6 +108,22 @@ public final class ModContent {
 	public static final ResourceKey<Item> REALISTIC_SLIME_ITEM_KEY = ResourceKey.create(Registries.ITEM, RealisticWater.id("realistic_slime"));
 	public static final Item REALISTIC_SLIME_ITEM = registerBlockItem(REALISTIC_SLIME_ITEM_KEY, REALISTIC_SLIME);
 
+	public static final ResourceKey<Block> REALISTIC_HONEY_KEY = ResourceKey.create(Registries.BLOCK, RealisticWater.id("realistic_honey"));
+	public static final Block REALISTIC_HONEY = Registry.register(BuiltInRegistries.BLOCK, REALISTIC_HONEY_KEY, new RealisticHoneyBlock(
+		BlockBehaviour.Properties.of()
+			.mapColor(constant(MapColor.class, "COLOR_ORANGE", MapColor.SAND))
+			.strength(0.3F)
+			.sound(constant(SoundType.class, "HONEY_BLOCK", SoundType.SAND))
+			.noOcclusion()
+			.pushReaction(PushReaction.POPPED)
+			.isSuffocating((state, level, pos) -> false)
+			.isViewBlocking((state, level, pos, box) -> false)
+			.setId(REALISTIC_HONEY_KEY)
+	));
+
+	public static final ResourceKey<Item> REALISTIC_HONEY_ITEM_KEY = ResourceKey.create(Registries.ITEM, RealisticWater.id("realistic_honey"));
+	public static final Item REALISTIC_HONEY_ITEM = registerBlockItem(REALISTIC_HONEY_ITEM_KEY, REALISTIC_HONEY);
+
 	private ModContent() {
 	}
 
@@ -135,6 +152,7 @@ public final class ModContent {
 			.register(output -> {
 				output.insertAfter(Items.SAND, REALISTIC_SAND_ITEM);
 				output.insertAfter(REALISTIC_SAND_ITEM, REALISTIC_SLIME_ITEM);
+				output.insertAfter(REALISTIC_SLIME_ITEM, REALISTIC_HONEY_ITEM);
 			});
 	}
 }

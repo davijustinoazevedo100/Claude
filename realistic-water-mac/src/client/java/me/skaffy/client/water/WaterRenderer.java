@@ -172,6 +172,7 @@ public final class WaterRenderer implements AutoCloseable {
 		Desc waterUbo = null;
 		Desc lavaUbo = null;
 		Desc slimeUbo = null;
+		Desc honeyUbo = null;
 		for (Body body : bodies) {
 			if (body.region().material == Material.WATER && waterUbo == null) {
 				waterUbo = body.ubo();
@@ -179,6 +180,8 @@ public final class WaterRenderer implements AutoCloseable {
 				lavaUbo = body.ubo();
 			} else if (body.region().material == Material.SLIME && slimeUbo == null) {
 				slimeUbo = body.ubo();
+			} else if (body.region().material == Material.HONEY && honeyUbo == null) {
+				honeyUbo = body.ubo();
 			}
 		}
 		GraphicsProgram.begin(cb, w, h, mainColorView, null, mainDepthView);
@@ -217,6 +220,18 @@ public final class WaterRenderer implements AutoCloseable {
 				matTex,
 				view);
 			this.compositeProgram.push(cb, Program.f(3.0F));
+			this.compositeProgram.draw(cb, 3, 1);
+		}
+		if (honeyUbo != null) {
+			this.compositeProgram.bind(cb, honeyUbo,
+				Desc.tex(this.gbuffer, this.nearest.handle),
+				Desc.tex(this.thickness, this.linear.handle),
+				Desc.tex(this.sceneColor, this.linear.handle),
+				depthTex,
+				Desc.tex(this.foam, this.linear.handle),
+				matTex,
+				view);
+			this.compositeProgram.push(cb, Program.f(4.0F));
 			this.compositeProgram.draw(cb, 3, 1);
 		}
 		GraphicsProgram.end(cb);

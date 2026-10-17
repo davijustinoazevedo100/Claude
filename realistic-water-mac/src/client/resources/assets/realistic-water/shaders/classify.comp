@@ -20,7 +20,7 @@ void main() {
         int e = entityAt(vec3(c) + 0.5);
         if (e >= 0) {
             t = CELL_SOLID | (uint(e + 1) << 8);
-        } else if (isWater() && iceCount[i] > 0) {
+        } else if (canSet() && iceCount[i] > 0) {
             t = CELL_SOLID;
         } else {
             t = cellCount[i] >= max(int(G.matA.w), 1) ? CELL_FLUID : CELL_AIR;

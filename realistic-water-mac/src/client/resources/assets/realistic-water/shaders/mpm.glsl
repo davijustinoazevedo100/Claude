@@ -11,8 +11,11 @@
 #define MPM_IMPACT_RATE G.matC.w
 #define MPM_IMPACT_LOG_J G.matE.w
 #define SLIME_BOUNCE G.matC.x
+#define SLIME_FLOOR_BOUNCE G.matC.z
+#define SLIME_FLOOR_FRICTION G.matC.w
 #define SLIME_DAMPING G.matD.x
 #define SLIME_GRIP G.matD.y
+#define SLIME_CEILING_HOLD G.matD.z
 #define BOUNCY_SOLID 2u
 
 const float MASS_FP = 1048576.0;
@@ -37,6 +40,11 @@ Stencil stencil(vec3 x) {
 #define STATE_STRIDE 28
 #define STATE_TAU 18
 #define STATE_REST 24
+// Slime: how long the particle has hung from a ceiling (it lets go after its own time), and whether it is holding on
+// to the ceiling right now: then it pins the grid around it (mpm_p2g.comp weighs it heavily) and the jelly hangs from it.
+#define STATE_CEILING 25
+#define STATE_PIN 26
+#define PIN_WEIGHT 40.0
 #define LOAD_MAT(buf, o) mat3(buf[o], buf[o + 1], buf[o + 2], buf[o + 3], buf[o + 4], buf[o + 5], buf[o + 6], buf[o + 7], buf[o + 8])
 
 void jacobi(inout mat3 A, inout mat3 V, int p, int q) {

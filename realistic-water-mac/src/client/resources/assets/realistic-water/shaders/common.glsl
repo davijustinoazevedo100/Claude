@@ -76,6 +76,16 @@ bool isWater() {
     return G.matA.x < 0.5;
 }
 
+bool isHoney() {
+    return abs(G.matA.x - 4.0) < 0.5;
+}
+
+// Liquids whose particles can hold still (flagged in vel.w, their cells solid): water when it freezes, and honey until
+// something disturbs it.
+bool canSet() {
+    return isWater() || isHoney();
+}
+
 // Frozen water: its material id in the front pass, and the solid-grid value of ice blocks (cold, and solid like any other).
 #define ICE_MAT 0.2
 #define COLD_SOLID 3u

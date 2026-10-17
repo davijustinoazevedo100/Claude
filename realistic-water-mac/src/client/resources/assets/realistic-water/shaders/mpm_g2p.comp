@@ -21,20 +21,28 @@ bool solidAt(vec3 p) {
     return inGrid(c) && staticSolid[cellIndex(c)] != 0u;
 }
 
-// Direction away from sticky solids within reach of a particle (zero if none): slime glues itself to them.
-vec3 stickyAway(vec3 x) {
+bool sticky(ivec3 c) {
+    if (!inGrid(c)) {
+        return false;
+    }
+    uint s = staticSolid[cellIndex(c)];
+    return s != 0u && s != BOUNCY_SOLID;
+}
+
+// Direction away from the walls within reach of a particle (zero if none): slime glues itself to them.
+vec3 wallAway(vec3 x) {
     vec3 away = vec3(0.0);
-    for (int k = 0; k < 6; k++) {
-        ivec3 e = axisVec(k >> 1) * ((k & 1) == 0 ? 1 : -1);
-        ivec3 c = ivec3(floor(x + 0.7 * vec3(e)));
-        if (inGrid(c)) {
-            uint s = staticSolid[cellIndex(c)];
-            if (s != 0u && s != BOUNCY_SOLID) {
-                away -= vec3(e);
-            }
+    for (int k = 0; k < 4; k++) {
+        ivec3 e = k < 2 ? ivec3(k == 0 ? 1 : -1, 0, 0) : ivec3(0, 0, k == 2 ? 1 : -1);
+        if (sticky(ivec3(floor(x + 0.7 * vec3(e))))) {
+            away -= vec3(e);
         }
     }
     return away;
+}
+
+bool ceilingAbove(vec3 x) {
+    return sticky(ivec3(floor(x + vec3(0.0, 0.7, 0.0))));
 }
 
 vec3 collideStatic(vec3 x, vec3 xn, inout vec3 v) {
@@ -97,6 +105,8 @@ struct Advanced {
     mat3 F;
     float tau6[6];
     float rest;
+    float ceiling;
+    float pin;
     bool asleep;
 };
 
@@ -109,6 +119,8 @@ bool advance(uint i, out Advanced r) {
     r.F = mat3(1.0);
     r.tau6 = float[](0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     r.rest = 0.0;
+    r.ceiling = 0.0;
+    r.pin = 0.0;
     r.asleep = false;
     if (i >= counters[pc.a.x]) {
         return false;
@@ -123,11 +135,19 @@ bool advance(uint i, out Advanced r) {
     mat3 F = valid ? LOAD_MAT(stateSrc, si + 9) : mat3(1.0);
     float tau6[6] = float[](0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     float rest = 0.0;
+    float ceiling = 0.0;
+    float pin = 0.0;
     if (valid) {
         for (int k = 0; k < 6; k++) {
             tau6[k] = stateSrc[si + STATE_TAU + k];
         }
         rest = stateSrc[si + STATE_REST];
+        ceiling = stateSrc[si + STATE_CEILING];
+    }
+    // Slime hanging from a ceiling stays awake until it lets go.
+    bool hanging = isSlime() && ceilingAbove(x);
+    if (hanging) {
+        rest = 0.0;
     }
     vec3 v;
     mat3 C = mat3(0.0);
@@ -180,19 +200,40 @@ bool advance(uint i, out Advanced r) {
         v *= maxSpeed / sp;
     }
     if (isSlime() && !asleep) {
-        // Glue: next to a block (anvils excepted) the jelly holds on unless something tears it away faster than its grip.
-        vec3 away = stickyAway(x);
-        if (dot(away, away) > 0.0 && dot(v, normalize(away)) < SLIME_GRIP) {
+        // Glue: next to a wall (anvils excepted) the jelly holds on unless something tears it away faster than its grip.
+        // Under a ceiling the particles touching it pin it in place, each only for its own while (its random tag spreads
+        // the times out): the slime hangs, sags as more of it lets go, and drops in one piece. The ground it just rests on.
+        vec3 away = wallAway(x);
+        bool held = dot(away, away) > 0.0 && dot(v, normalize(away)) < SLIME_GRIP;
+        if (hanging) {
+            ceiling += DT;
+            if (ceiling < SLIME_CEILING_HOLD * (0.6 + 0.8 * p.vel.w)) {
+                held = true;
+                pin = 1.0;
+                C = mat3(0.0);
+            }
+        } else {
+            ceiling = max(ceiling - DT, 0.0);
+        }
+        if (held) {
             v = vec3(0.0);
         }
     }
     vec3 xn = asleep ? x : collideStatic(x, x + DT * v, v);
-    vec3 pushed = collideEntities(xn, v);
-    if (pushed != xn) {
-        rest = 0.0;
-        asleep = false;
+    if (isSlime()) {
+        // Bodies push slime through the grid (mpm_grid.comp) so it never tears; touching it just wakes it.
+        if (entityAt(xn) >= 0) {
+            rest = 0.0;
+            asleep = false;
+        }
+    } else {
+        vec3 pushed = collideEntities(xn, v);
+        if (pushed != xn) {
+            rest = 0.0;
+            asleep = false;
+        }
+        xn = pushed;
     }
-    xn = pushed;
     if (nonFinite(xn) || nonFinite(v) || nonFinite(F[0]) || nonFinite(F[1]) || nonFinite(F[2])) {
         return false;
     }
@@ -208,6 +249,8 @@ bool advance(uint i, out Advanced r) {
     r.F = F;
     r.tau6 = tau6;
     r.rest = rest;
+    r.ceiling = ceiling;
+    r.pin = pin;
     r.asleep = asleep;
     return true;
 }
@@ -234,6 +277,8 @@ void main() {
             stateDst[so + STATE_TAU + k] = a.tau6[k];
         }
         stateDst[so + STATE_REST] = a.rest;
+        stateDst[so + STATE_CEILING] = a.ceiling;
+        stateDst[so + STATE_PIN] = a.pin;
     }
     compactStats(alive, length(a.v), written, a.xn, a.asleep ? 0u : 1u);
 }

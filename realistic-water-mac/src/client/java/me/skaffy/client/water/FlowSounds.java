@@ -22,7 +22,7 @@ final class FlowSounds {
 	private int tick;
 
 	void onFill(Material material, WaterRegion.Fill f, Vec3 listener) {
-		if (material == Material.SLIME) {
+		if (material == Material.SLIME || material == Material.HONEY) {
 			return;
 		}
 		boolean water = material == Material.WATER;

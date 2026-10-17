@@ -1,6 +1,8 @@
 package me.skaffy.client.mixin;
 
+import me.skaffy.block.RealisticHoneyBlock;
 import me.skaffy.block.RealisticSandBlock;
+import me.skaffy.block.RealisticSlimeBlock;
 import me.skaffy.client.water.WaterWorld;
 import me.skaffy.fluid.RealisticLavaFluid;
 import me.skaffy.fluid.RealisticWaterFluid;
@@ -22,7 +24,9 @@ public class ClientLevelMixin {
 		return state.isAir()
 			|| RealisticWaterFluid.isRealistic(fluid)
 			|| RealisticLavaFluid.isRealistic(fluid)
-			|| state.getBlock() instanceof RealisticSandBlock;
+			|| state.getBlock() instanceof RealisticSandBlock
+			|| state.getBlock() instanceof RealisticSlimeBlock
+			|| state.getBlock() instanceof RealisticHoneyBlock;
 	}
 
 	@Unique

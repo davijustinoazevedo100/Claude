@@ -176,7 +176,19 @@ bool airAround(ivec3 c) {
     return false;
 }
 
+// Some honey in this cell or next to it is running already.
+bool runningHoneyAround(ivec3 c) {
+    for (int k = 0; k < 7; k++) {
+        ivec3 nc = c + (k == 0 ? ivec3(0) : axisVec((k - 1) >> 1) * (((k - 1) & 1) == 0 ? 1 : -1));
+        if (inBox(nc) && cellCount[cellIndex(nc)] > iceCount[cellIndex(nc)]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Within reach of an entity: frozen water there breaks like glass, and liquid there doesn't freeze (no ice inside a player).
+// Honey there gets going.
 bool nearEntity(vec3 x) {
     float reach = G.iceB.x;
     for (int e = 0; e < numEntities(); e++) {
@@ -215,7 +227,17 @@ bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded, o
     v = p.vel.xyz;
     tag = p.pos.w;
     iceSeed = hash(i * 2246822519u + uint(pc.a.w) * 3266489917u);
-    if (p.vel.w > 0.5 && isWater()) {
+    if (p.vel.w > 0.5 && isHoney()) {
+        // Untouched honey holds its shape. A touch (someone walking into it, a piston) or honey already running next to it
+        // sets it going, and that spreads through the whole lump within moments.
+        if (!nearEntity(x) && !(rand(iceSeed) < G.iceA.y && runningHoneyAround(ivec3(floor(x))))) {
+            xn = x;
+            v = vec3(0.0);
+            frozen = true;
+            return true;
+        }
+        v = vec3(0.0);
+    } else if (p.vel.w > 0.5 && isWater()) {
         if (nearEntity(x)) {
             atomicAdd(counters[C_SHATTER], 1u);
             atomicAdd(counters[C_SHATTER + 1], uint(max(x.x, 0.0) * 16.0));

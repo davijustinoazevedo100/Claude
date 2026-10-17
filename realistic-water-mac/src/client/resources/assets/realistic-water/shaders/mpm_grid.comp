@@ -23,10 +23,26 @@ vec3 slide(vec3 v, vec3 n) {
     return t > -MPM_WALL_FRICTION * vn ? vt * (1.0 + MPM_WALL_FRICTION * vn / t) : vec3(0.0);
 }
 
-// Slime sticks to whatever it touches; off bouncy blocks (anvils) a fast hit rebounds instead.
+// Off a surface with outward normal n: the part moving into it stops (fast hits bounce back with this restitution) and
+// the sliding part loses speed to friction.
+vec3 rebound(vec3 v, vec3 n, float restitution, float friction) {
+    float vn = dot(v, n);
+    if (vn >= 0.0) {
+        return v;
+    }
+    vec3 vt = v - vn * n;
+    float t = length(vt);
+    vt = t > -friction * vn ? vt * (1.0 + friction * vn / t) : vec3(0.0);
+    float bounce = -vn > 0.5 * G.camGrid.w ? restitution : 0.0;
+    return vt - bounce * vn * n;
+}
+
+// Slime holds on to walls. It rests on the ground without sticking and bounces when it lands hard, and anvils throw it
+// back harder. A ceiling only stops it from rising here; the particles hanging from it hold on for a while themselves
+// (mpm_g2p.comp), so the slime peels off bit by bit and drops.
 vec3 slimeContact(ivec3 c, vec3 v) {
     uint own = solidKind(c);
-    bool sticky = own != 0u && own != BOUNCY_SOLID;
+    bool wall = false;
     bool bouncy = own == BOUNCY_SOLID;
     vec3 n = vec3(0.0);
     for (int a = 0; a < 3; a++) {
@@ -37,23 +53,51 @@ vec3 slimeContact(ivec3 c, vec3 v) {
             n[a] += (hi == 0u ? 1.0 : 0.0) - (lo == 0u ? 1.0 : 0.0);
         } else {
             n[a] += (lo != 0u ? 1.0 : 0.0) - (hi != 0u ? 1.0 : 0.0);
+            wall = wall || (a != 1 && ((lo != 0u && lo != BOUNCY_SOLID) || (hi != 0u && hi != BOUNCY_SOLID)));
         }
-        sticky = sticky || (lo != 0u && lo != BOUNCY_SOLID) || (hi != 0u && hi != BOUNCY_SOLID);
         bouncy = bouncy || lo == BOUNCY_SOLID || hi == BOUNCY_SOLID;
     }
-    if (sticky) {
-        return vec3(0.0);
-    }
-    if (bouncy) {
+    if (own != 0u) {
+        // Inside a block: it faces the way the open cells around it are.
         if (dot(n, n) < 1e-6) {
             return vec3(0.0);
         }
-        n = normalize(n);
-        float vn = dot(v, n);
-        if (vn < 0.0) {
-            float rebound = -vn > 0.5 * G.camGrid.w ? SLIME_BOUNCE : 0.0;
-            v -= (1.0 + rebound) * vn * n;
+        wall = own != BOUNCY_SOLID && max(abs(n.x), abs(n.z)) > abs(n.y);
+    }
+    if (wall) {
+        return vec3(0.0);
+    }
+    if (dot(n, n) < 1e-6) {
+        return v;
+    }
+    n = normalize(n);
+    if (bouncy) {
+        return rebound(v, n, SLIME_BOUNCE, 0.0);
+    }
+    return n.y > 0.5 ? rebound(v, n, SLIME_FLOOR_BOUNCE, SLIME_FLOOR_FRICTION) : rebound(v, n, 0.0, 0.0);
+}
+
+// Bodies (players, mobs, piston heads) push the jelly instead of slicing through it: grid nodes inside a box move out
+// through its nearest side, at least as fast as the box moves that way and fast enough to clear it in a few steps.
+// The jelly then bends around the body and springs back whole.
+vec3 entityPush(vec3 p, vec3 v) {
+    for (int e = 0; e < numEntities(); e++) {
+        vec3 lo = entMin(e) - 0.5;
+        vec3 hi = entMax(e) + 0.5;
+        if (any(lessThan(p, lo)) || any(greaterThan(p, hi))) {
+            continue;
         }
+        vec3 dLo = p - lo;
+        vec3 dHi = hi - p;
+        int axis = 0;
+        float best = 1e9;
+        float dir = 1.0;
+        for (int a = 0; a < 3; a++) {
+            if (dLo[a] < best) { best = dLo[a]; axis = a; dir = -1.0; }
+            if (dHi[a] < best) { best = dHi[a]; axis = a; dir = 1.0; }
+        }
+        float away = dir * entVel(e)[axis] + min(best / (4.0 * DT), G.simB.x);
+        v[axis] = dir * max(dir * v[axis], away);
     }
     return v;
 }
@@ -73,7 +117,7 @@ void main() {
     }
     vec3 v = vec3(g.yzw) / MOM_FP / mass + G.gravityDt.xyz * DT;
     if (isSlime()) {
-        v = slimeContact(c, v);
+        v = slimeContact(c, entityPush(vec3(c) + 0.5, v));
     } else if (solid(c)) {
         vec3 n = vec3(0.0);
         for (int a = 0; a < 3; a++) {
