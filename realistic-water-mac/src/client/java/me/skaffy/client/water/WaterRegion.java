@@ -464,7 +464,7 @@ public final class WaterRegion implements AutoCloseable {
 			this.wwCount[1] = VkBuf.device(this.numCells * 4L, 0);
 			this.solver = new PressureSolver(this.nx, this.ny, this.nz);
 		}
-		this.mesher = new SurfaceMesher(this.nx, this.ny, this.nz, Math.max(1, WaterSettings.surfaceSubdivision));
+		this.mesher = new SurfaceMesher(this.nx, this.ny, this.nz, SurfaceMesher.fitSubdivision(this.nx, this.ny, this.nz, WaterSettings.surfaceSubdivision));
 		this.freshGrid = true;
 	}
 
@@ -563,8 +563,10 @@ public final class WaterRegion implements AutoCloseable {
 
 	private void ensureCapacity(VkCommandBuffer cb, int incoming, int numSources, int incomingWhitewater) {
 		long estimate = (long) this.lastFluidCount + this.emittedSinceReadback + incoming + (long) numSources * this.res * this.res * this.res * 64;
-		if (estimate > this.fluidCapacity * 0.8) {
-			int next = (int) Math.min(Integer.MAX_VALUE / PARTICLE_BYTES, Math.max(this.fluidCapacity * 2L, estimate * 3 / 2));
+		// Never grow a particle buffer past what one storage-buffer binding may cover; the shaders already drop overflow.
+		long fluidLimit = Math.min(Integer.MAX_VALUE / PARTICLE_BYTES, Vk.maxStorageBufferRange() / (this.material.isGranular() ? MPM_STATE_BYTES : PARTICLE_BYTES));
+		if (estimate > this.fluidCapacity * 0.8 && this.fluidCapacity < fluidLimit) {
+			int next = (int) Math.min(fluidLimit, Math.max(this.fluidCapacity * 2L, estimate * 3 / 2));
 			this.particles = grow(cb, this.particles, this.cur, (long) this.fluidCapacity * PARTICLE_BYTES, (long) next * PARTICLE_BYTES);
 			if (this.material.isGranular()) {
 				VkBuf[] grown = grow(cb, this.mpmState, this.cur, (long) this.fluidCapacity * MPM_STATE_BYTES, (long) next * MPM_STATE_BYTES);
@@ -575,8 +577,9 @@ public final class WaterRegion implements AutoCloseable {
 			}
 			this.fluidCapacity = next;
 		}
-		if (this.lastWhitewaterCount + incomingWhitewater > this.wwCapacity * 0.8) {
-			int next = (int) Math.min(Integer.MAX_VALUE / PARTICLE_BYTES, this.wwCapacity * 2L);
+		long wwLimit = Math.min(Integer.MAX_VALUE / PARTICLE_BYTES, Vk.maxStorageBufferRange() / PARTICLE_BYTES);
+		if (this.lastWhitewaterCount + incomingWhitewater > this.wwCapacity * 0.8 && this.wwCapacity < wwLimit) {
+			int next = (int) Math.min(wwLimit, this.wwCapacity * 2L);
 			this.whitewater = grow(cb, this.whitewater, this.wwCur, (long) this.wwCapacity * PARTICLE_BYTES, (long) next * PARTICLE_BYTES);
 			this.wwCapacity = next;
 		}

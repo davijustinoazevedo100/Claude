@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderingRegistry;
+import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.color.block.BlockTintSources;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.client.renderer.block.FluidModel;
@@ -53,8 +54,18 @@ public class RealisticWaterClient implements ClientModInitializer {
 			new Material(Identifier.withDefaultNamespace("block/lava_still")),
 			new Material(Identifier.withDefaultNamespace("block/lava_flow")),
 			new Material(Identifier.withDefaultNamespace("block/lava_overlay")),
-			BlockTintSources.constant(0xFFFFFF)
+			untinted()
 		);
 		FluidRenderingRegistry.register(ModContent.REALISTIC_LAVA, ModContent.FLOWING_REALISTIC_LAVA, lavaModel, invisible);
+	}
+
+	// BlockTintSources.constant(int) by reflection, falling back to the water tint: the model is never drawn (the handler
+	// above renders nothing), so a different signature in another 26.x build must not stop the game from starting.
+	private static BlockTintSource untinted() {
+		try {
+			return (BlockTintSource) BlockTintSources.class.getMethod("constant", int.class).invoke(null, 0xFFFFFF);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return BlockTintSources.water();
+		}
 	}
 }

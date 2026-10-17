@@ -1,0 +1,6 @@
+# Precompiled SPIR-V is looked up by a hash of the exact shader text, so shader line endings must not change on checkout.
+*.comp text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+*.glsl text eol=lf
+*.spv binary

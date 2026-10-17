@@ -38,7 +38,7 @@ public final class WaterRenderer implements AutoCloseable {
 	private VkTex foam;
 
 	public WaterRenderer() {
-		this.thicknessFormat = blendable(VkTex.R32F) ? VkTex.R32F : VkTex.R16F;
+		this.thicknessFormat = blendable(VkTex.R32F) && filterable(VkTex.R32F) ? VkTex.R32F : VkTex.R16F;
 		int U = Desc.UBO;
 		int S = Desc.SSBO;
 		int T = Desc.TEX;
@@ -59,10 +59,19 @@ public final class WaterRenderer implements AutoCloseable {
 	}
 
 	private static boolean blendable(int format) {
+		return supports(format, VK10.VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT);
+	}
+
+	// The thickness target is read back with a linear sampler; Apple GPUs can blend R32F without filtering it.
+	private static boolean filterable(int format) {
+		return supports(format, VK10.VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+	}
+
+	private static boolean supports(int format, int features) {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			VkFormatProperties props = VkFormatProperties.calloc(stack);
 			VK10.vkGetPhysicalDeviceFormatProperties(Vk.vk().getPhysicalDevice(), format, props);
-			return (props.optimalTilingFeatures() & VK10.VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) != 0;
+			return (props.optimalTilingFeatures() & features) == features;
 		}
 	}
 

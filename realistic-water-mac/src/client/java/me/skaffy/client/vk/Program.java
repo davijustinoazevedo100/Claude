@@ -24,18 +24,20 @@ public abstract class Program implements AutoCloseable {
 	protected final long setLayout;
 	protected final long layout;
 	protected long pipeline;
+	private final boolean pushDescriptors;
 
 	protected Program(String name, int bindPoint, int... types) {
 		this.name = name;
 		this.types = types;
 		this.bindPoint = bindPoint;
+		this.pushDescriptors = Vk.pushDescriptors();
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(types.length, stack);
 			for (int i = 0; i < types.length; i++) {
 				bindings.get(i).binding(i).descriptorType(types[i]).descriptorCount(1).stageFlags(STAGES);
 			}
 			VkDescriptorSetLayoutCreateInfo setInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default()
-				.flags(KHRPushDescriptor.VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR)
+				.flags(this.pushDescriptors ? KHRPushDescriptor.VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR : 0)
 				.pBindings(bindings);
 			LongBuffer p = stack.mallocLong(1);
 			Vk.check(VK10.vkCreateDescriptorSetLayout(Vk.vk(), setInfo, null, p), "descriptor set layout " + name);
@@ -69,7 +71,16 @@ public abstract class Program implements AutoCloseable {
 					w.pImageInfo(VkDescriptorImageInfo.calloc(1, stack).imageView(d.view()).sampler(d.sampler()).imageLayout(VK10.VK_IMAGE_LAYOUT_GENERAL));
 				}
 			}
-			KHRPushDescriptor.vkCmdPushDescriptorSetKHR(cb, this.bindPoint, this.layout, 0, writes);
+			if (this.pushDescriptors) {
+				KHRPushDescriptor.vkCmdPushDescriptorSetKHR(cb, this.bindPoint, this.layout, 0, writes);
+			} else {
+				long set = Vk.allocateSet(this.setLayout);
+				for (int i = 0; i < descs.length; i++) {
+					writes.get(i).dstSet(set);
+				}
+				VK10.vkUpdateDescriptorSets(Vk.vk(), writes, null);
+				VK10.vkCmdBindDescriptorSets(cb, this.bindPoint, this.layout, 0, stack.longs(set), null);
+			}
 		}
 	}
 

@@ -2,12 +2,13 @@
 	"schemaVersion": 1,
 	"id": "realistic-water",
 	"version": "${version}",
-	"name": "Realistic Water",
-	"description": "Ultra realistic water and sand in Minecraft!",
+	"name": "Realistic Water (macOS fix)",
+	"description": "Ultra realistic water and sand in Minecraft! Modified build with macOS/MoltenVK fixes, not the original mod. Original mod by Skaffy: https://github.com/sskaffy/Realistic-Water",
 	"authors": [
 		"Skaffy"
 	],
 	"contact": {
+		"homepage": "https://github.com/sskaffy/Realistic-Water"
 	},
 	"license": "Custom License",
 	"icon": "assets/realistic-water/icon.png",

@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import me.skaffy.ModContent;
 import me.skaffy.RealisticWater;
@@ -244,19 +245,57 @@ public final class WaterWorld {
 	}
 
 	private boolean warnedNoVulkan;
+	private boolean tunedForGpu;
 
 	private boolean vulkanReady() {
 		if (Vk.tryDevice() != null) {
+			this.tuneForGpu();
 			return true;
 		}
 		Minecraft mc = Minecraft.getInstance();
 		if (!this.warnedNoVulkan && mc.player != null) {
 			this.warnedNoVulkan = true;
+			String mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")
+				? " On macOS Vulkan runs through MoltenVK: if the game keeps going back to OpenGL, Minecraft's own Vulkan renderer can't start on "
+					+ "this Mac (see the game log), and macOS OpenGL has no compute shaders, so the simulation can't run there."
+				: "";
 			mc.player.sendSystemMessage(Component.literal(
 				"Realistic Water needs the Vulkan graphics API (Options > Video Settings > Graphics API > Vulkan, then restart). "
-					+ "Minecraft switches back to OpenGL by itself after a crash during startup."));
+					+ "Minecraft switches back to OpenGL by itself after a crash during startup." + mac));
 		}
 		return false;
+	}
+
+	// Simulation memory grows with resolution cubed and a splash easily needs over a gigabyte at the defaults, which
+	// GPUs with a small heap (older Macs share about 1.5 GB with macOS) can't give. Runs before the first region exists.
+	private void tuneForGpu() {
+		if (this.tunedForGpu) {
+			return;
+		}
+		this.tunedForGpu = true;
+		long heap = Vk.deviceLocalHeap();
+		if (heap >= 3L << 30) {
+			return;
+		}
+		if (WaterSettings.resolution == 6) {
+			WaterSettings.resolution = 4;
+		}
+		if (WaterSettings.lavaResolution == 6) {
+			WaterSettings.lavaResolution = 4;
+		}
+		if (WaterSettings.sandResolution == 12) {
+			WaterSettings.sandResolution = 8;
+		}
+		this.builtResolution = WaterSettings.resolution;
+		this.builtSandResolution = WaterSettings.sandResolution;
+		this.builtLavaResolution = WaterSettings.lavaResolution;
+		RealisticWater.LOGGER.info("Realistic Water: {} MiB GPU heap, using resolution {} / sand {} / lava {}", heap >> 20, WaterSettings.resolution,
+			WaterSettings.sandResolution, WaterSettings.lavaResolution);
+		Minecraft mc = Minecraft.getInstance();
+		if (mc.player != null) {
+			mc.player.sendSystemMessage(Component.literal("Realistic Water: small GPU memory (" + (heap >> 20) + " MB), using a lower simulation resolution. "
+				+ "\"/water set resolution 6\" brings back full detail if your GPU can take it."));
+		}
 	}
 
 	public void addWater(BlockPos pos, double y0, double y1) {
@@ -661,12 +700,16 @@ public final class WaterWorld {
 			return;
 		}
 		try {
+			if (!Vk.coreRendering() && !Vk.khrRendering()) {
+				throw new IllegalStateException("this Vulkan device doesn't expose dynamic rendering (Vulkan 1.3 or VK_KHR_dynamic_rendering)");
+			}
 			this.renderFrameUnsafe(mc, mc.level);
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | LinkageError e) {
+			// LinkageError too: a missing native library or driver entry point must not take the whole game down.
 			this.failed = true;
 			RealisticWater.LOGGER.error("Realistic Water frame failed; disabling the simulation", e);
 			if (mc.player != null) {
-				mc.player.sendSystemMessage(Component.literal("Realistic Water failed: " + e.getMessage()));
+				mc.player.sendSystemMessage(Component.literal("Realistic Water failed: " + (e.getMessage() != null ? e.getMessage() : e.toString())));
 			}
 		}
 	}

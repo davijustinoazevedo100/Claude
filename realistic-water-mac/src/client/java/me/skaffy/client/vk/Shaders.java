@@ -3,11 +3,11 @@ package me.skaffy.client.vk;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.LongBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.shaderc.Shaderc;
@@ -15,51 +15,62 @@ import org.lwjgl.vulkan.VK10;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 
 public final class Shaders {
-	private static final String ROOT = "/assets/realistic-water/shaders/";
 	public static final int VERTEX = Shaderc.shaderc_vertex_shader;
 	public static final int FRAGMENT = Shaderc.shaderc_fragment_shader;
 	public static final int COMPUTE = Shaderc.shaderc_compute_shader;
+	private static final int SPIRV_MAGIC = 0x07230203;
 
 	private Shaders() {
 	}
 
 	public static String load(String name) {
-		try (InputStream in = Shaders.class.getResourceAsStream(ROOT + name)) {
-			if (in == null) {
-				throw new IllegalStateException("Missing shader " + name);
-			}
-			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		} catch (IOException e) {
-			throw new IllegalStateException("Failed to read shader " + name, e);
-		}
-	}
-
-	private static String preprocess(String source, Set<String> seen) {
-		StringBuilder out = new StringBuilder();
-		for (String line : source.split("\n", -1)) {
-			String trimmed = line.trim();
-			if (trimmed.startsWith("#include")) {
-				int a = trimmed.indexOf('"');
-				int b = trimmed.lastIndexOf('"');
-				String file = trimmed.substring(a + 1, b);
-				if (seen.add(file)) {
-					out.append(preprocess(load(file), seen)).append('\n');
-				}
-			} else {
-				out.append(line).append('\n');
-			}
-		}
-		return out.toString();
+		return ShaderSource.load(name);
 	}
 
 	public static long module(String name, int kind, Map<String, String> defines) {
-		String source = load(name);
-		int nl = source.indexOf('\n');
-		StringBuilder head = new StringBuilder(source.substring(0, nl + 1));
-		defines.forEach((k, v) -> head.append("#define ").append(k).append(' ').append(v).append('\n'));
-		String full = preprocess(head + source.substring(nl + 1), new HashSet<>());
+		String full = ShaderSource.expand(name, defines);
+		if (Vk.preserveNan() && full.contains(ShaderSource.PRESERVE_NAN)) {
+			Map<String, String> preserving = new HashMap<>(defines);
+			preserving.put(ShaderSource.PRESERVE_NAN, "1");
+			full = ShaderSource.expand(name, preserving);
+		}
+		byte[] spv = precompiled(name, kind, full);
+		if (spv == null) {
+			spv = compile(name, kind, full);
+		}
+		ByteBuffer code = MemoryUtil.memAlloc(spv.length);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			code.put(spv).flip();
+			VkShaderModuleCreateInfo info = VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code);
+			LongBuffer pModule = stack.mallocLong(1);
+			Vk.check(VK10.vkCreateShaderModule(Vk.vk(), info, null, pModule), "vkCreateShaderModule " + name);
+			return pModule.get(0);
+		} finally {
+			MemoryUtil.memFree(code);
+		}
+	}
 
-		long compiler = Shaderc.shaderc_compiler_initialize();
+	// SPIR-V built from this exact text at build time, so shaderc's native library is only needed for edited shaders.
+	private static byte @Nullable [] precompiled(String name, int kind, String full) {
+		try (InputStream in = Shaders.class.getResourceAsStream(ShaderSource.spvPath(name, kind, full))) {
+			if (in == null) {
+				return null;
+			}
+			byte[] spv = in.readAllBytes();
+			boolean valid = spv.length >= 20 && spv.length % 4 == 0 && ByteBuffer.wrap(spv).order(ByteOrder.LITTLE_ENDIAN).getInt(0) == SPIRV_MAGIC;
+			return valid ? spv : null;
+		} catch (IOException e) {
+			return null;
+		}
+	}
+
+	private static byte[] compile(String name, int kind, String full) {
+		long compiler;
+		try {
+			compiler = Shaderc.shaderc_compiler_initialize();
+		} catch (LinkageError e) {
+			throw new IllegalStateException("Shader " + name + " isn't precompiled and the shaderc library failed to load (" + e + ")", e);
+		}
 		long options = Shaderc.shaderc_compile_options_initialize();
 		ByteBuffer src = MemoryUtil.memUTF8(full, false);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -70,11 +81,10 @@ public final class Shaders {
 				if (Shaderc.shaderc_result_get_compilation_status(result) != Shaderc.shaderc_compilation_status_success) {
 					throw new IllegalStateException("Shader " + name + " failed to compile:\n" + Shaderc.shaderc_result_get_error_message(result));
 				}
-				ByteBuffer spv = Shaderc.shaderc_result_get_bytes(result);
-				VkShaderModuleCreateInfo info = VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(spv);
-				LongBuffer pModule = stack.mallocLong(1);
-				Vk.check(VK10.vkCreateShaderModule(Vk.vk(), info, null, pModule), "vkCreateShaderModule " + name);
-				return pModule.get(0);
+				ByteBuffer bytes = Shaderc.shaderc_result_get_bytes(result);
+				byte[] spv = new byte[bytes.remaining()];
+				bytes.get(spv);
+				return spv;
 			} finally {
 				Shaderc.shaderc_result_release(result);
 			}

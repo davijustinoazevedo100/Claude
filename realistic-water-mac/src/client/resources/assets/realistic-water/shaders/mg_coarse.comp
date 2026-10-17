@@ -1,16 +1,23 @@
 #version 450
 #include "common.glsl"
 #include "mg_common.glsl"
-layout(local_size_x = 1024) in;
+// 256 threads that own up to 4 cells each instead of one 1024-thread group: Metal (MoltenVK) caps
+// threadgroups at 512 threads on older Macs and lowers the cap further for register-heavy pipelines.
+#define COARSE_THREADS 256
+#define COARSE_CELLS 1024
+#define CELLS_PER_THREAD 4
+layout(local_size_x = COARSE_THREADS) in;
 layout(std430, binding = 1) readonly buffer MgFlags { uint mgFlags[]; };
 layout(std430, binding = 2) readonly buffer B { float b[]; };
 layout(std430, binding = 3) buffer X { float x[]; };
 
-shared float sx[1024];
-shared float sb[1024];
-shared uint sf[1024];
+shared float sx[COARSE_CELLS];
+shared float sb[COARSE_CELLS];
+shared uint sf[COARSE_CELLS];
 
-void sweep(int t, int count, ivec3 c, ivec3 lo, ivec3 size, int parity) {
+ivec3 cells[CELLS_PER_THREAD];
+
+void relax(int t, int count, ivec3 c, ivec3 lo, ivec3 size, int parity) {
     if (t < count && sf[t] == CELL_FLUID && ((c.x + c.y + c.z) & 1) == parity) {
         float s = 0.0;
         float n = 0.0;
@@ -21,6 +28,10 @@ void sweep(int t, int count, ivec3 c, ivec3 lo, ivec3 size, int parity) {
                 continue;
             }
             int j = nb.x + size.x * (nb.y + size.y * nb.z);
+            if (j >= count) {
+                n += 1.0;
+                continue;
+            }
             if (sf[j] == CELL_SOLID) {
                 continue;
             }
@@ -33,35 +44,47 @@ void sweep(int t, int count, ivec3 c, ivec3 lo, ivec3 size, int parity) {
             sx[t] = (sb[t] + s) / n;
         }
     }
+}
+
+void sweep(int count, ivec3 lo, ivec3 size, int parity) {
+    for (int k = 0; k < CELLS_PER_THREAD; k++) {
+        relax(int(gl_LocalInvocationID.x) + k * COARSE_THREADS, count, cells[k], lo, size, parity);
+    }
     barrier();
 }
 
 void main() {
     int l = pc.misc.z;
-    int t = int(gl_LocalInvocationID.x);
-    int count = min(lvlBoxCount(pc.dims, l), 1024);
+    int count = min(lvlBoxCount(pc.dims, l), COARSE_CELLS);
     ivec3 lo = lvlBoxMin(l);
     ivec3 size = lvlBoxMax(l, pc.dims) - lo;
-    ivec3 c = ivec3(0);
-    int i = 0;
-    if (t < count) {
-        c = lvlBoxCell(t, pc.dims, l);
-        i = lvlIndex(c, pc.dims);
-        sf[t] = mgFlags[i];
-        sb[t] = b[i];
-        sx[t] = (pc.misc.y != 0 || sf[t] != CELL_FLUID) ? 0.0 : x[i];
+    int index[CELLS_PER_THREAD];
+    for (int k = 0; k < CELLS_PER_THREAD; k++) {
+        int t = int(gl_LocalInvocationID.x) + k * COARSE_THREADS;
+        cells[k] = ivec3(0);
+        index[k] = 0;
+        if (t < count) {
+            cells[k] = lvlBoxCell(t, pc.dims, l);
+            index[k] = lvlIndex(cells[k], pc.dims);
+            sf[t] = mgFlags[index[k]];
+            sb[t] = b[index[k]];
+            sx[t] = (pc.misc.y != 0 || sf[t] != CELL_FLUID) ? 0.0 : x[index[k]];
+        }
     }
     barrier();
     int sweeps = max(pc.misc2.x, 1);
     for (int k = 0; k < sweeps; k++) {
-        sweep(t, count, c, lo, size, 0);
-        sweep(t, count, c, lo, size, 1);
+        sweep(count, lo, size, 0);
+        sweep(count, lo, size, 1);
     }
     for (int k = 0; k < sweeps; k++) {
-        sweep(t, count, c, lo, size, 1);
-        sweep(t, count, c, lo, size, 0);
+        sweep(count, lo, size, 1);
+        sweep(count, lo, size, 0);
     }
-    if (t < count) {
-        x[i] = sx[t];
+    for (int k = 0; k < CELLS_PER_THREAD; k++) {
+        int t = int(gl_LocalInvocationID.x) + k * COARSE_THREADS;
+        if (t < count) {
+            x[index[k]] = sx[t];
+        }
     }
 }

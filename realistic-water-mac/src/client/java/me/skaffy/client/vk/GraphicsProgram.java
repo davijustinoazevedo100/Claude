@@ -5,6 +5,7 @@ import java.util.Map;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRDynamicRendering;
 import org.lwjgl.vulkan.VK10;
+import org.lwjgl.vulkan.VK13;
 import org.lwjgl.vulkan.VkClearValue;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkGraphicsPipelineCreateInfo;
@@ -147,7 +148,15 @@ public final class GraphicsProgram extends Program {
 					.storeOp(VK10.VK_ATTACHMENT_STORE_OP_STORE);
 				info.pDepthAttachment(depth);
 			}
-			KHRDynamicRendering.vkCmdBeginRenderingKHR(cb, info);
+			// The KHR entry point is only loaded when Minecraft enabled the extension by name; a Vulkan 1.3 device
+			// (e.g. MoltenVK) may expose dynamic rendering as core only.
+			if (Vk.coreRendering()) {
+				VK13.vkCmdBeginRendering(cb, info);
+			} else if (Vk.khrRendering()) {
+				KHRDynamicRendering.vkCmdBeginRenderingKHR(cb, info);
+			} else {
+				throw new IllegalStateException("this Vulkan device doesn't expose dynamic rendering (Vulkan 1.3 or VK_KHR_dynamic_rendering)");
+			}
 
 			VkViewport.Buffer vp = VkViewport.calloc(1, stack).x(0).y(0).width(width).height(height).minDepth(0.0F).maxDepth(1.0F);
 			VK10.vkCmdSetViewport(cb, 0, vp);
@@ -158,7 +167,11 @@ public final class GraphicsProgram extends Program {
 	}
 
 	public static void end(VkCommandBuffer cb) {
-		KHRDynamicRendering.vkCmdEndRenderingKHR(cb);
+		if (Vk.coreRendering()) {
+			VK13.vkCmdEndRendering(cb);
+		} else {
+			KHRDynamicRendering.vkCmdEndRenderingKHR(cb);
+		}
 	}
 
 	public void draw(VkCommandBuffer cb, int vertices, int instances) {

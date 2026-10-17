@@ -14,14 +14,19 @@ void main() {
         return;
     }
     Particle p = parts[i];
-    if (p.pos.w < 0.0) {
+    if (p.pos.w < 0.0 || nonFinite(p.pos.xyz)) {
         return;
     }
     vec3 g = p.pos.xyz * float(G.fine.w);
     float R = pc.b.x;
     float invR2 = 1.0 / (R * R);
-    ivec3 lo = ivec3(ceil(g - 0.5 - R));
-    ivec3 hi = ivec3(floor(g - 0.5 + R));
+    // Clamp the splat footprint to the fine box so a stray particle can never turn this into a
+    // near-endless loop (a GPU timeout loses the whole Vulkan device on macOS).
+    if (any(lessThan(g, vec3(G.fineBoxMin.xyz) - R - 1.0)) || any(greaterThan(g, vec3(G.fineBoxMax.xyz) + R + 1.0))) {
+        return;
+    }
+    ivec3 lo = max(ivec3(ceil(g - 0.5 - R)), G.fineBoxMin.xyz);
+    ivec3 hi = min(ivec3(floor(g - 0.5 + R)), G.fineBoxMax.xyz - 1);
     for (int z = lo.z; z <= hi.z; z++) {
         for (int y = lo.y; y <= hi.y; y++) {
             for (int x = lo.x; x <= hi.x; x++) {

@@ -3,6 +3,7 @@ package me.skaffy.fluid;
 import java.util.Optional;
 import me.skaffy.ModContent;
 import me.skaffy.ModSettings;
+import me.skaffy.RealisticWater;
 import me.skaffy.block.RealisticWaterBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -34,6 +35,9 @@ import net.minecraft.world.level.material.FluidState;
 import org.jspecify.annotations.Nullable;
 
 public abstract class RealisticLavaFluid extends FlowingFluid {
+	private static boolean fireSpreadBroken;
+	private static boolean effectsBroken;
+
 	@Override
 	public Fluid getFlowing() {
 		return ModContent.FLOWING_REALISTIC_LAVA;
@@ -59,7 +63,21 @@ public abstract class RealisticLavaFluid extends FlowingFluid {
 
 	@Override
 	public void randomTick(final ServerLevel level, final BlockPos pos, final FluidState fluidState, final RandomSource random) {
-		if (!ModSettings.lavaIgniteFlammables || !level.canSpreadFireAround(pos)) {
+		if (!ModSettings.lavaIgniteFlammables || fireSpreadBroken) {
+			return;
+		}
+		try {
+			this.spreadFire(level, pos, random);
+		} catch (LinkageError e) {
+			// This path calls Minecraft APIs that the released 1.2.1 jar didn't use yet; if any of them differ in this
+			// version, turn fire spreading off instead of crashing the server tick.
+			fireSpreadBroken = true;
+			RealisticWater.LOGGER.error("Realistic lava fire spreading disabled: incompatible Minecraft API", e);
+		}
+	}
+
+	private void spreadFire(final ServerLevel level, final BlockPos pos, final RandomSource random) {
+		if (!level.canSpreadFireAround(pos)) {
 			return;
 		}
 		int passes = random.nextInt(3);
@@ -129,9 +147,17 @@ public abstract class RealisticLavaFluid extends FlowingFluid {
 
 	@Override
 	protected void entityInside(final Level level, final BlockPos pos, final Entity entity, final InsideBlockEffectApplier effectApplier) {
-		effectApplier.apply(InsideBlockEffectType.CLEAR_FREEZE);
-		effectApplier.apply(InsideBlockEffectType.LAVA_IGNITE);
-		effectApplier.runAfter(InsideBlockEffectType.LAVA_IGNITE, Entity::lavaHurt);
+		if (effectsBroken) {
+			return;
+		}
+		try {
+			effectApplier.apply(InsideBlockEffectType.CLEAR_FREEZE);
+			effectApplier.apply(InsideBlockEffectType.LAVA_IGNITE);
+			effectApplier.runAfter(InsideBlockEffectType.LAVA_IGNITE, Entity::lavaHurt);
+		} catch (LinkageError e) {
+			effectsBroken = true;
+			RealisticWater.LOGGER.error("Realistic lava burning disabled: incompatible Minecraft API", e);
+		}
 	}
 
 	@Override

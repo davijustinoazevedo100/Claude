@@ -207,6 +207,15 @@ vec3 randInSphere(inout uint state) {
     return vec3(0.0);
 }
 
+// Bit-pattern Inf/NaN test: unlike isnan()/isinf() it survives Metal's fast-math mode (MoltenVK on macOS).
+bool nonFinite(float v) {
+    return (floatBitsToUint(v) & 0x7F800000u) == 0x7F800000u;
+}
+
+bool nonFinite(vec3 v) {
+    return nonFinite(v.x) || nonFinite(v.y) || nonFinite(v.z);
+}
+
 float clampPhi(float v, float lo, float hi) {
     return clamp((v - lo) / max(hi - lo, 1e-6), 0.0, 1.0);
 }

@@ -1,6 +1,5 @@
 #version 450
-#extension GL_KHR_shader_subgroup_arithmetic : enable
-#extension GL_KHR_shader_subgroup_ballot : enable
+#include "float_controls.glsl"
 #include "common.glsl"
 #include "mpm.glsl"
 layout(local_size_x = 256) in;
@@ -14,6 +13,8 @@ layout(std430, binding = 7) readonly buffer Static { uint staticSolid[]; };
 layout(push_constant) uniform PC { ivec4 a; ivec4 b; } pc;
 
 #define C_AWAKE 14
+#define COMPACT_AWAKE
+#include "compact.glsl"
 
 bool solidAt(vec3 p) {
     ivec3 c = ivec3(floor(p));
@@ -71,14 +72,34 @@ vec3 collideEntities(vec3 x, inout vec3 v) {
     return x;
 }
 
-void main() {
-    uint i = GID_U;
+struct Advanced {
+    vec3 xn;
+    vec3 v;
+    float spread;
+    float velW;
+    mat3 C;
+    mat3 F;
+    float tau6[6];
+    float rest;
+    bool asleep;
+};
+
+bool advance(uint i, out Advanced r) {
+    r.xn = vec3(0.0);
+    r.v = vec3(0.0);
+    r.spread = 0.0;
+    r.velW = 0.0;
+    r.C = mat3(0.0);
+    r.F = mat3(1.0);
+    r.tau6 = float[](0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    r.rest = 0.0;
+    r.asleep = false;
     if (i >= counters[pc.a.x]) {
-        return;
+        return false;
     }
     Particle p = src[i];
     if (p.pos.w < 0.0) {
-        return;
+        return false;
     }
     vec3 x = p.pos.xyz;
     int si = int(i) * STATE_STRIDE;
@@ -144,48 +165,47 @@ void main() {
         asleep = false;
     }
     xn = pushed;
-    if (any(isnan(xn)) || any(isinf(xn)) || any(isnan(v)) || any(isnan(F[0])) || any(isnan(F[1])) || any(isnan(F[2]))) {
-        return;
+    if (nonFinite(xn) || nonFinite(v) || nonFinite(F[0]) || nonFinite(F[1]) || nonFinite(F[2])) {
+        return false;
     }
     float killMargin = G.killInfo.y;
     if (any(lessThan(xn, vec3(-killMargin))) || any(greaterThanEqual(xn, vec3(NX, NY, NZ) + killMargin)) || xn.y < G.killInfo.x) {
-        return;
+        return false;
     }
-    uint groupTotal = subgroupAdd(1u);
-    uint prefix = subgroupExclusiveAdd(1u);
-    float groupMax = subgroupMax(length(v));
-    uint groupAwake = subgroupAdd(asleep ? 0u : 1u);
-    uint base = 0u;
-    if (subgroupElect()) {
-        base = atomicAdd(counters[pc.a.y], groupTotal);
-        atomicMax(counters[6], floatBitsToUint(groupMax));
-        atomicAdd(counters[C_AWAKE], groupAwake);
-    }
-    uint o = subgroupBroadcastFirst(base) + prefix;
-    if (o >= uint(G.caps.x)) {
-        return;
-    }
-    dst[o] = Particle(vec4(xn, spread), vec4(v, p.vel.w));
-    int so = int(o) * STATE_STRIDE;
-    for (int c = 0; c < 3; c++) {
-        for (int r = 0; r < 3; r++) {
-            stateDst[so + 3 * c + r] = C[c][r];
-            stateDst[so + 9 + 3 * c + r] = F[c][r];
+    r.xn = xn;
+    r.v = v;
+    r.spread = spread;
+    r.velW = p.vel.w;
+    r.C = C;
+    r.F = F;
+    r.tau6 = tau6;
+    r.rest = rest;
+    r.asleep = asleep;
+    return true;
+}
+
+void main() {
+    uint i = GID_U;
+    Advanced a;
+    bool alive = advance(i, a);
+
+    uint total;
+    uint slot = compactSlot(alive, total);
+    uint o = compactReserve(uint(pc.a.y), total) + slot;
+    bool written = alive && o < uint(G.caps.x);
+    if (written) {
+        dst[o] = Particle(vec4(a.xn, a.spread), vec4(a.v, a.velW));
+        int so = int(o) * STATE_STRIDE;
+        for (int c = 0; c < 3; c++) {
+            for (int r = 0; r < 3; r++) {
+                stateDst[so + 3 * c + r] = a.C[c][r];
+                stateDst[so + 9 + 3 * c + r] = a.F[c][r];
+            }
         }
+        for (int k = 0; k < 6; k++) {
+            stateDst[so + STATE_TAU + k] = a.tau6[k];
+        }
+        stateDst[so + STATE_REST] = a.rest;
     }
-    for (int k = 0; k < 6; k++) {
-        stateDst[so + STATE_TAU + k] = tau6[k];
-    }
-    stateDst[so + STATE_REST] = rest;
-    uvec3 cell = uvec3(ivec3(floor(xn)) + AABB_BIAS);
-    uvec3 lo = uvec3(subgroupMin(cell.x), subgroupMin(cell.y), subgroupMin(cell.z));
-    uvec3 hi = uvec3(subgroupMax(cell.x), subgroupMax(cell.y), subgroupMax(cell.z));
-    if (subgroupElect()) {
-        atomicMin(counters[8], lo.x);
-        atomicMin(counters[9], lo.y);
-        atomicMin(counters[10], lo.z);
-        atomicMax(counters[11], hi.x);
-        atomicMax(counters[12], hi.y);
-        atomicMax(counters[13], hi.z);
-    }
+    compactStats(alive, length(a.v), written, a.xn, a.asleep ? 0u : 1u);
 }

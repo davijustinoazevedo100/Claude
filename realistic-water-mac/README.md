@@ -1,3 +1,42 @@
+# Realistic Water (macOS fix) — modified build
+
+**This is a modified version of Realistic Water, not the original mod.** The original mod is made by
+**Skaffy**: https://github.com/sskaffy/Realistic-Water. This build is distributed under the same license
+(see [LICENSE](LICENSE), kept unchanged) and is based on the original 1.2.1 source for Minecraft 26.3.
+
+It changes nothing about how the mod plays; it only fixes the Vulkan code so it runs on macOS (MoltenVK),
+including older Macs on Big Sur:
+
+- No subgroup operations in the particle compaction shaders (`g2p.comp`, `mpm_g2p.comp`): workgroup scans
+  in shared memory instead, which every Metal GPU supports.
+- The coarse multigrid solve (`mg_coarse.comp`) uses 256 threads per workgroup instead of 1024, which older
+  Mac GPUs can't run in one Metal threadgroup.
+- Inf/NaN checks use bit patterns, so they still work under Metal's fast-math mode, and NaN preservation is
+  requested from the driver when it supports it. Particle splatting is clamped to the grid, so a stray
+  particle can no longer stall the GPU until macOS resets it.
+- Shaders ship precompiled to SPIR-V, so the mod no longer depends on the shaderc native library at runtime
+  (it still compiles at runtime if a shader was edited without regenerating the SPIR-V).
+- Falls back to normal descriptor sets when the device has no push descriptors, and to
+  `VK_KHR_dynamic_rendering` when core Vulkan 1.3 dynamic rendering is missing.
+- Uses a 16-bit thickness target when the GPU can't blend or filter 32-bit floats.
+- Sizes the surface mesh and particle buffers to fit `maxStorageBufferRange` and the GPU's memory; on GPUs
+  with less than 3 GB the default simulation resolution is lowered (`/water set resolution 6` restores it).
+- Clearer chat message when Minecraft itself couldn't start Vulkan (macOS OpenGL has no compute shaders,
+  so the mod needs Minecraft's Vulkan renderer).
+- Lava fire spreading and lava entity effects switch themselves off with a log line, instead of crashing
+  the game, if a Minecraft method they call is missing.
+
+On startup the log (`logs/latest.log`) gets a line starting with `Realistic Water on` that lists the GPU and
+the code paths in use. Two JVM flags exist for troubleshooting: `-Drealisticwater.noPushDescriptors=true`
+forces descriptor sets, and `-Drealisticwater.fastMath=true` turns off the NaN-preserving shader variants.
+
+Building: `./gradlew build` as usual. After editing a shader, run `tools/precompile-shaders.sh` (Linux or
+macOS, JDK 17+) to regenerate `src/client/resources/assets/realistic-water/shaders/spv`.
+
+The original README follows.
+
+---
+
 # Realistic Water
 A Minecraft mod that adds the realistic waters and sands from Blender animations.
 

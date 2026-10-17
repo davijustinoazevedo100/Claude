@@ -82,6 +82,17 @@ final class SurfaceMesher implements AutoCloseable {
 
 	private static ComputeProgram[] shared;
 
+	// The fine grid's splat buffer (16 bytes per voxel) is the largest allocation; coarsen the surface instead of
+	// exceeding maxStorageBufferRange or a slice of GPU memory on smaller GPUs (older Macs share 1.5 GB with the system).
+	static int fitSubdivision(int nx, int ny, int nz, int requested) {
+		long budget = Vk.storageBudget();
+		int sub = Math.max(1, requested);
+		while (sub > 1 && (long) nx * ny * nz * sub * sub * sub * 16L > budget) {
+			sub--;
+		}
+		return sub;
+	}
+
 	static void closePrograms() {
 		if (shared != null) {
 			for (ComputeProgram p : shared) {
