@@ -22,6 +22,9 @@ final class FlowSounds {
 	private int tick;
 
 	void onFill(Material material, WaterRegion.Fill f, Vec3 listener) {
+		if (material == Material.SLIME) {
+			return;
+		}
 		boolean water = material == Material.WATER;
 		boolean lava = material == Material.LAVA;
 		if (water ? !WaterSettings.flowSounds : lava ? !WaterSettings.lavaFlowSounds : !WaterSettings.sandSounds) {

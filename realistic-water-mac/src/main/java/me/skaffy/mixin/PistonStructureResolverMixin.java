@@ -1,6 +1,7 @@
 package me.skaffy.mixin;
 
 import me.skaffy.block.RealisticSandBlock;
+import me.skaffy.block.RealisticSlimeBlock;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
@@ -11,6 +12,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public class PistonStructureResolverMixin {
 	@Redirect(method = "addBlockLine", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/state/BlockState;isAir()Z"))
 	private boolean realisticWater$sandIsAir(BlockState state) {
-		return state.isAir() || state.getBlock() instanceof RealisticSandBlock;
+		return state.isAir() || state.getBlock() instanceof RealisticSandBlock || state.getBlock() instanceof RealisticSlimeBlock;
 	}
 }

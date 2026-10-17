@@ -42,12 +42,13 @@ public final class WaterRenderer implements AutoCloseable {
 		int U = Desc.UBO;
 		int S = Desc.SSBO;
 		int T = Desc.TEX;
+		// Second target: material id plus the surface's flow velocity (blocks/s), which drives the lava crust pattern.
 		GraphicsProgram.State front = new GraphicsProgram.State(RGBA32F, VkTex.D32, true, true, VK10.VK_COMPARE_OP_GREATER, GraphicsProgram.Blend.NONE,
-			VkTex.R32F);
+			VkTex.RGBA16F);
 		GraphicsProgram.State add = new GraphicsProgram.State(this.thicknessFormat, VK10.VK_FORMAT_UNDEFINED, false, false, VK10.VK_COMPARE_OP_ALWAYS,
 			GraphicsProgram.Blend.ADD);
 		Map<String, String> droplets = Map.of("DROPLETS", "1", "VIEW_BINDING", "3");
-		this.meshFront = new GraphicsProgram("mesh.vert", "mesh_front.frag", Map.of(), front, U, S, S, S);
+		this.meshFront = new GraphicsProgram("mesh.vert", "mesh_front.frag", Map.of(), front, U, S, S, S, S);
 		this.dropletFront = new GraphicsProgram("particle.vert", "droplet_front.frag", droplets, front, U, S, S, S);
 		this.meshThickness = new GraphicsProgram("mesh.vert", "mesh_thickness.frag", Map.of(), add, U, S, S, S, T);
 		this.dropletThickness = new GraphicsProgram("particle.vert", "droplet_thickness.frag", droplets, add, U, S, S, S, T);
@@ -86,7 +87,7 @@ public final class WaterRenderer implements AutoCloseable {
 		this.fluidZ = new VkTex(VkTex.D32, w, h, VkTex.COPY_DST | VkTex.DEPTH);
 		this.sceneColor = new VkTex(VkTex.RGBA8, w, h, VkTex.COPY_DST | VkTex.SAMPLED);
 		this.gbuffer = new VkTex(RGBA32F, w, h, VkTex.COLOR | VkTex.SAMPLED);
-		this.materialId = new VkTex(VkTex.R32F, w, h, VkTex.COLOR | VkTex.SAMPLED);
+		this.materialId = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.thickness = new VkTex(this.thicknessFormat, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.foam = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
 	}
@@ -127,7 +128,7 @@ public final class WaterRenderer implements AutoCloseable {
 		for (Body body : bodies) {
 			WaterRegion r = body.region();
 			float radius = WaterSettings.particleRadius / r.res;
-			this.meshFront.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view);
+			this.meshFront.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, Desc.ssbo(r.gridVelocity()));
 			this.meshFront.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DRAW_ARGS_OFFSET);
 			this.dropletFront.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.mesher.densA), view);
 			this.dropletFront.push(cb, Program.f(radius), Program.f(0.0F), Program.f(0.15F));
@@ -166,11 +167,14 @@ public final class WaterRenderer implements AutoCloseable {
 
 		Desc waterUbo = null;
 		Desc lavaUbo = null;
+		Desc slimeUbo = null;
 		for (Body body : bodies) {
 			if (body.region().material == Material.WATER && waterUbo == null) {
 				waterUbo = body.ubo();
 			} else if (body.region().material == Material.LAVA && lavaUbo == null) {
 				lavaUbo = body.ubo();
+			} else if (body.region().material == Material.SLIME && slimeUbo == null) {
+				slimeUbo = body.ubo();
 			}
 		}
 		GraphicsProgram.begin(cb, w, h, mainColorView, null, mainDepthView);
@@ -197,6 +201,18 @@ public final class WaterRenderer implements AutoCloseable {
 				matTex,
 				view);
 			this.compositeProgram.push(cb, Program.f(2.0F));
+			this.compositeProgram.draw(cb, 3, 1);
+		}
+		if (slimeUbo != null) {
+			this.compositeProgram.bind(cb, slimeUbo,
+				Desc.tex(this.gbuffer, this.nearest.handle),
+				Desc.tex(this.thickness, this.linear.handle),
+				Desc.tex(this.sceneColor, this.linear.handle),
+				depthTex,
+				Desc.tex(this.foam, this.linear.handle),
+				matTex,
+				view);
+			this.compositeProgram.push(cb, Program.f(3.0F));
 			this.compositeProgram.draw(cb, 3, 1);
 		}
 		GraphicsProgram.end(cb);

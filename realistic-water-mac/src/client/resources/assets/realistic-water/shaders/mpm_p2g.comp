@@ -28,7 +28,10 @@ void main() {
         tau = mat3(state[t], state[t + 3], state[t + 4], state[t + 3], state[t + 1], state[t + 5], state[t + 4], state[t + 5], state[t + 2]);
     }
     float squeeze = C[0][0] + C[1][1] + C[2][2];
-    if (squeeze < 0.0) {
+    if (isSlime()) {
+        // Kelvin-Voigt damping: the jelly wobbles, then settles.
+        tau += SLIME_DAMPING * (C + transpose(C));
+    } else if (squeeze < 0.0) {
         tau += MPM_IMPACT_VISCOSITY / MPM_VOLUME * squeeze * mat3(1.0);
     }
     mat3 affine = -DT * MPM_VOLUME * 4.0 * tau + C;

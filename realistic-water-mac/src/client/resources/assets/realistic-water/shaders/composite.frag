@@ -114,19 +114,165 @@ vec3 sunSpecular(vec3 n, vec3 V, float footprint) {
     return vec3(1.0, 0.96, 0.88) * min(D * Vis * F * NoL * G.shadeB.x, 30.0) * G.sunDir.w;
 }
 
-vec3 shadeAboveLava(vec2 uv, vec3 n, float fd, float ambient) {
+// ---- lava: a cooled crust torn into streaks along the flow, hot glowing channels between them ----
+
+float cellRand(ivec2 c) {
+    return float(hash(uint(c.x) * 73856093u ^ uint(c.y) * 19349663u) >> 8) * (1.0 / 16777216.0);
+}
+
+// Value noise with its gradient: (value, d/dx, d/dy).
+vec3 valueNoise(vec2 p) {
+    ivec2 i = ivec2(floor(p));
+    vec2 f = p - vec2(i);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    vec2 du = 6.0 * f * (1.0 - f);
+    float a = cellRand(i);
+    float b = cellRand(i + ivec2(1, 0));
+    float c = cellRand(i + ivec2(0, 1));
+    float d = cellRand(i + ivec2(1, 1));
+    float k = a - b - c + d;
+    return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du.x * (b - a + k * u.y), du.y * (c - a + k * u.x));
+}
+
+// Noise squeezed across the flow (q.x) and stretched along it (q.y); octaves finer than a few pixels fade to their mean.
+vec3 streakNoise(vec2 q, float footprint) {
+    vec3 sum = vec3(0.0);
+    float amp = 0.55;
+    float norm = 0.0;
+    vec2 scale = vec2(4.5, 0.3);
+    vec2 offset = vec2(0.0);
+    for (int k = 0; k < 3; k++) {
+        float fade = smoothstep(1.5, 4.0, 1.0 / (scale.x * max(footprint, 1e-5)));
+        vec3 n = valueNoise(q * scale + offset);
+        sum += amp * mix(vec3(0.5, 0.0, 0.0), vec3(n.x, n.yz * scale), fade);
+        norm += amp;
+        amp *= 0.5;
+        scale *= 2.0;
+        offset += vec2(13.7, 41.3);
+    }
+    return sum / norm;
+}
+
+// The streak pattern at world point W for a surface with normal n flowing along d (b = across). Frames are anchored on
+// a lattice so turning flow can't swirl the pattern far away, blended with variance-preserving weights; two phases
+// slide it downstream at the flow speed and take turns resetting (a flow map). Returns value and world gradient.
+vec4 lavaPattern(vec3 W, vec3 n, vec3 d, vec3 b, float speed, float t, float footprint) {
+    vec3 an = abs(n);
+    int k = an.x > an.y ? (an.x > an.z ? 0 : 2) : (an.y > an.z ? 1 : 2);
+    int ia = k == 0 ? 1 : 0;
+    int ib = k == 2 ? 1 : 2;
+    const float SPACING = 1.5;
+    const float PERIOD = 3.0;
+    vec2 g = vec2(W[ia], W[ib]) / SPACING;
+    ivec2 g0 = ivec2(floor(g));
+    vec2 f = g - vec2(g0);
+    float value = 0.0;
+    vec3 grad = vec3(0.0);
+    float w2 = 0.0;
+    for (int phase = 0; phase < 2; phase++) {
+        float cycle = t / PERIOD + 0.5 * float(phase);
+        float ph = fract(cycle);
+        float wp = 1.0 - abs(2.0 * ph - 1.0);
+        float shift = speed * (ph - 0.5) * PERIOD;
+        uint cycleSeed = uint(int(floor(cycle))) * 2654435761u + uint(phase) * 97u;
+        for (int c = 0; c < 4; c++) {
+            ivec2 cell = g0 + ivec2(c & 1, c >> 1);
+            vec2 cw = mix(1.0 - f, f, vec2(c & 1, c >> 1));
+            float w = wp * cw.x * cw.y;
+            vec3 L = W;
+            L[ia] = float(cell.x) * SPACING;
+            L[ib] = float(cell.y) * SPACING;
+            vec3 Q = W - L;
+            uint s = hash(uint(cell.x) * 73856093u ^ uint(cell.y) * 19349663u ^ cycleSeed);
+            vec2 jitter = vec2(float(s & 0xFFFFu), float(s >> 16)) * (61.0 / 65536.0);
+            vec3 sn = streakNoise(vec2(dot(Q, b), dot(Q, d) - shift) + jitter, footprint);
+            value += w * sn.x;
+            grad += w * (sn.y * b + sn.z * d);
+            w2 += w * w;
+        }
+    }
+    float inv = inversesqrt(max(w2, 1e-4));
+    return vec4(clamp(0.5 + (value - 0.5) * inv, 0.0, 1.0), grad * inv);
+}
+
+vec3 lavaRamp(float x) {
+    const vec3 C0 = vec3(0.46, 0.10, 0.02);
+    const vec3 C1 = vec3(0.76, 0.24, 0.03);
+    const vec3 C2 = vec3(0.98, 0.45, 0.05);
+    const vec3 C3 = vec3(1.00, 0.68, 0.14);
+    const vec3 C4 = vec3(1.00, 0.87, 0.40);
+    x = clamp(x, 0.0, 1.0) * 4.0;
+    return x < 1.0 ? mix(C0, C1, x) : x < 2.0 ? mix(C1, C2, x - 1.0) : x < 3.0 ? mix(C2, C3, x - 2.0) : mix(C3, C4, x - 3.0);
+}
+
+vec3 shadeAboveLava(vec2 uv, vec3 n, float fd, float ambient, vec3 flow) {
     vec3 P = viewPosAt(uv, fd);
     vec3 V = normalize(-P);
     n = dot(n, V) < 0.0 ? -n : n;
     float footprint = pixelFootprint(fd);
-    vec3 wrinkled = rippleNormal(n, P, footprint);
-    n = normalize(mix(n, wrinkled, smoothstep(0.0, 0.2, dot(wrinkled, V))));
-    float path = max(texture(thicknessTex, uv).r, 0.0) * G.waterA.y;
-    vec3 glow = G.scatter.rgb * (1.4 + ambient);
-    vec3 core = glow * (1.0 - exp(-G.scatter.w * path * 0.45));
-    float fresnel = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.0);
-    vec3 rim = glow * fresnel * 0.85;
-    return core + rim + sunSpecular(n, V, footprint) * vec3(1.0, 0.65, 0.25);
+    vec3 nW = normalize(mat3(G.invView) * n);
+    vec3 W = G.misc.yzw + (G.invView * vec4(P, 0.0)).xyz;
+
+    // Flow in the surface plane; a still pool falls back to the downhill (or a fixed) direction.
+    vec3 ft = flow - nW * dot(flow, nW);
+    float speed = length(ft);
+    vec3 rest = vec3(0.0, -1.0, 0.0) + nW * nW.y;
+    if (dot(rest, rest) < 1e-3) {
+        rest = vec3(0.8, 0.0, 0.6) - nW * dot(vec3(0.8, 0.0, 0.6), nW);
+    }
+    vec3 d = normalize(ft + normalize(rest) * 0.08);
+    vec3 b = normalize(cross(nW, d));
+    d = cross(b, nW);
+    vec4 pat = lavaPattern(W, nW, d, b, speed, G.simB.z, footprint);
+
+    float path = max(texture(thicknessTex, uv).r, 0.0);
+    float thin = 1.0 - smoothstep(0.03, 0.3, path);
+    float heat = clamp(speed * 0.18, 0.0, 0.3) + 0.3 * thin;
+    float x = smoothstep(0.3, 0.7, pat.x) * 0.8 + 0.08 + heat;
+    vec3 color = lavaRamp(x);
+
+    // Relief: the crust ridges tilt the surface; their sunny sides brighten and the grooves fall into shade.
+    vec3 bumped = normalize(nW - 0.3 * pat.yzw);
+    vec3 nV = normalize(mat3(G.view) * bumped);
+    float relief = dot(bumped - nW, normalize(mat3(G.invView) * G.sunDir.xyz));
+    color *= clamp(1.0 + 0.9 * relief, 0.7, 1.25);
+    float fresnel = pow(1.0 - clamp(dot(nV, V), 0.0, 1.0), 3.0);
+    color += lavaRamp(x + 0.25) * fresnel * 0.35;
+    color += sunSpecular(nV, V, footprint) * vec3(1.0, 0.7, 0.4) * (0.25 + 0.5 * (1.0 - clamp(x, 0.0, 1.0)));
+    return color * (0.9 + 0.1 * ambient);
+}
+
+// ---- slime: a clear green jelly, coloured by the light it scatters on the way through ----
+
+vec3 shadeAboveSlime(vec2 uv, vec3 n, float fd, float ambient) {
+    vec3 P = viewPosAt(uv, fd);
+    vec3 V = normalize(-P);
+    n = dot(n, V) < 0.0 ? -n : n;
+    float footprint = pixelFootprint(fd);
+    float thickness = max(texture(thicknessTex, uv).r, 0.0);
+    vec2 offset = n.xy * G.waterA.z * clamp(thickness, 0.0, 1.5) / max(fd, 1.0);
+    vec2 ruv = clamp(uv + offset, vec2(0.0), vec2(1.0));
+    if (linearDepth(texture(sceneDepth, ruv).r) < fd) {
+        ruv = uv;
+    }
+    float path = thickness * G.waterA.y;
+    vec3 under = texture(sceneColor, ruv).rgb;
+    vec3 transmitted = under * exp(-G.absorb.rgb * path);
+    // Light scattered inside the gel: brighter on the side facing the sun, deeper green where it is thick.
+    vec3 L = normalize(G.sunDir.xyz);
+    float wrapLit = clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0) * G.sunDir.w;
+    vec3 body = G.scatter.rgb * (0.3 * ambient + 0.25 + 0.75 * wrapLit);
+    vec3 scattered = body * (1.0 - exp(-G.scatter.w * path));
+    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.0);
+    vec3 jelly = transmitted + scattered + G.scatter.rgb * vec3(1.2, 1.0, 1.4) * rim * 0.35 * (0.4 + 0.6 * ambient);
+
+    vec3 Rv = reflect(-V, n);
+    vec3 Rw = (G.invView * vec4(Rv, 0.0)).xyz;
+    float hit;
+    vec3 ssr = traceReflection(P + n * 0.05, Rv, hit);
+    vec3 reflection = mix(skyColor(Rw), ssr, hit);
+    float F = 0.03 + 0.97 * pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 5.0);
+    return mix(jelly, reflection, F * 0.7) + sunSpecular(n, V, footprint);
 }
 
 vec3 shadeAboveWater(vec2 uv, vec3 n, float fd, float sceneDist, float ambient) {
@@ -167,15 +313,14 @@ vec3 shadeAboveWater(vec2 uv, vec3 n, float fd, float sceneDist, float ambient) 
     return mix(water, reflection, F) + sunSpecular(n, V, footprint);
 }
 
-float foamLace(vec2 p, float coverage, float footprint) {
-    float size = max(G.shadeB.w, 1e-3);
-    vec2 q = p / size;
+// Distance to the nearest Voronoi cell wall (f2 - f1) at q, for bubble rims.
+float bubbleWalls(vec2 q, uint salt) {
     ivec2 cell = ivec2(floor(q));
     float f1 = 9.0;
     float f2 = 9.0;
     for (int k = 0; k < 9; k++) {
         ivec2 c = cell + ivec2(k % 3 - 1, k / 3 - 1);
-        uint s = hash(uint(c.x) * 73856093u ^ uint(c.y) * 19349663u);
+        uint s = hash(uint(c.x) * 73856093u ^ uint(c.y) * 19349663u ^ salt);
         vec2 feature = vec2(c) + 0.1 + 0.8 * vec2(rand(s), rand(s));
         float d = length(q - feature);
         if (d < f1) {
@@ -185,9 +330,36 @@ float foamLace(vec2 p, float coverage, float footprint) {
             f2 = d;
         }
     }
-    float wall = 1.0 - smoothstep(0.0, 0.06 + 0.6 * coverage, f2 - f1);
-    float detail = smoothstep(0.7, 2.5, size / max(footprint, 1e-5));
-    return mix(0.55, wall, detail);
+    return f2 - f1;
+}
+
+// Foam texture: big and small bubbles whose rims thicken with foam density until the patch is solid white.
+float foamTexture(vec2 p, float density, float footprint) {
+    // Foam gathers in islands and streaks with clearer water between them.
+    float patches = valueNoise(p * 0.8).x * 0.6 + valueNoise(p * 2.3 + vec2(31.7, 11.3)).x * 0.4;
+    patches = smoothstep(0.25, 0.75, patches);
+    density = clamp(density * (0.25 + 1.2 * patches), 0.0, 1.0);
+    float size = max(G.shadeB.w, 1e-3);
+    float rimBig = 1.0 - smoothstep(0.0, 0.04 + 0.32 * density * density, bubbleWalls(p / size, 0u));
+    float rimSmall = 1.0 - smoothstep(0.0, 0.06 + 0.4 * density * density, bubbleWalls(p / (size * 0.38), 0x5bd1e995u));
+    float lace = max(rimBig, 0.8 * rimSmall);
+    float detail = smoothstep(0.7, 2.5, size * 0.38 / max(footprint, 1e-5));
+    return mix(0.3 + 0.45 * density, lace, detail) * (0.35 + 0.75 * patches);
+}
+
+// The foam texture drifts with the surface current: two phases slide downstream and take turns resetting.
+float foamLace(vec2 p, vec2 flow, float density, float footprint) {
+    const float PERIOD = 4.0;
+    float t = G.simB.z;
+    float sum = 0.0;
+    for (int phase = 0; phase < 2; phase++) {
+        float cycle = t / PERIOD + 0.5 * float(phase);
+        float ph = fract(cycle);
+        float w = 1.0 - abs(2.0 * ph - 1.0);
+        vec2 jitter = vec2(float(int(floor(cycle)) % 64) * 7.31, float(phase) * 13.7);
+        sum += w * foamTexture(p - flow * (ph - 0.5) * PERIOD + jitter, density, footprint);
+    }
+    return sum;
 }
 
 vec3 shadeSurfaceFromBelow(vec2 uv, vec3 n, float fd, vec3 deep) {
@@ -213,27 +385,22 @@ void main() {
     vec2 uv = gl_FragCoord.xy * G.screen.zw;
     vec4 g = texture(gbuffer, uv);
     float fd = g.w;
-    float matId = texture(materialTex, uv).r;
-    bool lavaPass = pc.filterMat > 1.5;
-    vec4 foam = texture(foamTex, uv);
+    vec4 mat = texture(materialTex, uv);
+    float matId = mat.r;
+    bool lavaPass = abs(pc.filterMat - 2.0) < 0.5;
+    bool slimePass = abs(pc.filterMat - 3.0) < 0.5;
+    bool waterPass = !lavaPass && !slimePass;
+    vec4 foam = waterPass ? texture(foamTex, uv) : vec4(0.0);
     float sceneDev = texture(sceneDepth, uv).r;
     float sceneDist = linearDepth(sceneDev);
     bool hasFluid = fd > 0.0 && fd < sceneDist;
-    bool underwater = viewState.x > 0.5;
+    bool underwater = viewState.x > 0.5 && !slimePass;
     bool matTagged = matId >= -0.5;
     if (hasFluid && matTagged) {
-        if (lavaPass) {
-            if (abs(matId - 2.0) > 0.25) {
-                discard;
-            }
-        } else if (abs(matId) > 0.25) {
+        if (abs(matId - pc.filterMat) > 0.25) {
             discard;
         }
-    } else if (hasFluid && !matTagged) {
-        if (lavaPass) {
-            discard;
-        }
-    } else if (lavaPass) {
+    } else if (!waterPass) {
         discard;
     }
     if (!hasFluid && foam.a < 1e-3 && !underwater) {
@@ -255,19 +422,26 @@ void main() {
         float fog = G.scatter.w * G.misc.x;
         color = color * exp(-G.absorb.rgb * visible * G.misc.x) + deep * (1.0 - exp(-fog * visible));
     } else if (hasFluid) {
-        color = lavaPass ? shadeAboveLava(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
+        color = lavaPass ? shadeAboveLava(uv, g.xyz, fd, ambient, mat.gba)
+            : slimePass ? shadeAboveSlime(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
         vec4 clip = G.proj * vec4(viewPosAt(uv, fd), 1.0);
         outDepth = clip.z / clip.w;
     }
 
     if (foam.a > 1e-4) {
         vec3 foamColor = foam.rgb / foam.a;
-        float coverage = min(1.0 - exp(-foam.a * G.foamA.y), 0.9);
+        float density = 1.0 - exp(-foam.a * G.foamA.y);
+        float coverage = min(density, 0.9);
+        float light = mix(0.25, 1.0, ambient);
         if (hasFluid && !underwater) {
-            vec3 world = G.misc.yzw + (G.invView * vec4(viewPosAt(uv, fd), 0.0)).xyz;
-            coverage *= foamLace(world.xz, coverage, pixelFootprint(fd));
+            vec3 P = viewPosAt(uv, fd);
+            vec3 world = G.misc.yzw + (G.invView * vec4(P, 0.0)).xyz;
+            coverage *= foamLace(world.xz, mat.ga, density, pixelFootprint(fd));
+            // Foam is a rough white layer: lit by the sun on top of the sky light.
+            float sun = max(dot(normalize(g.xyz), normalize(G.sunDir.xyz)), 0.0) * G.sunDir.w;
+            light = mix(0.3, 0.85, ambient) + 0.3 * sun;
         }
-        color = mix(color, foamColor * mix(0.25, 1.0, ambient), coverage);
+        color = mix(color, foamColor * light, coverage);
     }
 
     outColor = vec4(color, 1.0);

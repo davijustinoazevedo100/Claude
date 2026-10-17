@@ -66,6 +66,10 @@ bool isLava() {
     return abs(G.matA.x - 2.0) < 0.5;
 }
 
+bool isSlime() {
+    return abs(G.matA.x - 3.0) < 0.5;
+}
+
 #define NX G.dims.x
 #define NY G.dims.y
 #define NZ G.dims.z

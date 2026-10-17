@@ -4,8 +4,10 @@
 **Skaffy**: https://github.com/sskaffy/Realistic-Water. This build is distributed under the same license
 (see [LICENSE](LICENSE), kept unchanged) and is based on the original 1.2.1 source for Minecraft 26.3.
 
-It changes nothing about how the mod plays; it only fixes the Vulkan code so it runs on macOS (MoltenVK),
-including older Macs on Big Sur:
+It fixes the Vulkan code so it runs on macOS (MoltenVK), including older Macs on Big Sur, and adds a few
+things the original doesn't have (see "Additions" below).
+
+### macOS fixes
 
 - No subgroup operations in the particle compaction shaders (`g2p.comp`, `mpm_g2p.comp`): workgroup scans
   in shared memory instead, which every Metal GPU supports.
@@ -25,6 +27,25 @@ including older Macs on Big Sur:
   so the mod needs Minecraft's Vulkan renderer).
 - Lava fire spreading and lava entity effects switch themselves off with a log line, instead of crashing
   the game, if a Minecraft method they call is missing.
+
+### Additions
+
+- **Realistic Slime** (Natural Blocks tab, next to Realistic Sand): an elastic jelly cube simulated with MPM.
+  It sticks to the blocks it touches (walls, floors, ceilings) and wobbles, but bounces off anvils. Spawn one
+  in front of you with `/water slime [size]`, remove all with `/water remove slime`. Tunable with
+  `/water set slimeStiffness|slimeDamping|slimeBounce|slimeGrip <value>`.
+- **Slow, thick lava**: lava now has real viscosity (an implicit viscosity solve on the grid with no-slip walls),
+  so it creeps down walls and spreads in thick lobes instead of falling at a fixed speed
+  (`lavaViscosity`, `lavaViscositySweeps`, `lavaMaxSpeed`).
+- **Molten lava look**: a cooled crust torn into streaks along the flow, with bright hot channels between them;
+  the pattern moves with the lava and its relief catches the sunlight.
+- **Better foam**: foam lasts longer, gathers in islands and streaks with a bubbly texture that drifts with
+  the current, and is lit by the sun.
+
+The images in [screenshots](screenshots) come from the headless test renderer used during development (the
+mod's own simulation and shaders, with simple stand-in blocks instead of Minecraft's world).
+
+### Troubleshooting
 
 On startup the log (`logs/latest.log`) gets a line starting with `Realistic Water on` that lists the GPU and
 the code paths in use. Two JVM flags exist for troubleshooting: `-Drealisticwater.noPushDescriptors=true`

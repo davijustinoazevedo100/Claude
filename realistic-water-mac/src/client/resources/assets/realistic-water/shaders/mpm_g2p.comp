@@ -21,6 +21,22 @@ bool solidAt(vec3 p) {
     return inGrid(c) && staticSolid[cellIndex(c)] != 0u;
 }
 
+// Direction away from sticky solids within reach of a particle (zero if none): slime glues itself to them.
+vec3 stickyAway(vec3 x) {
+    vec3 away = vec3(0.0);
+    for (int k = 0; k < 6; k++) {
+        ivec3 e = axisVec(k >> 1) * ((k & 1) == 0 ? 1 : -1);
+        ivec3 c = ivec3(floor(x + 0.7 * vec3(e)));
+        if (inGrid(c)) {
+            uint s = staticSolid[cellIndex(c)];
+            if (s != 0u && s != BOUNCY_SOLID) {
+                away -= vec3(e);
+            }
+        }
+    }
+    return away;
+}
+
 vec3 collideStatic(vec3 x, vec3 xn, inout vec3 v) {
     if (solidAt(x)) {
         ivec3 c = ivec3(floor(x));
@@ -145,7 +161,12 @@ bool advance(uint i, out Advanced r) {
             C = mat3(0.0);
         } else {
             mat3 tau;
-            F = projectSand((mat3(1.0) + DT * C) * F, C[0][0] + C[1][1] + C[2][2], tau);
+            if (isSlime()) {
+                F = (mat3(1.0) + DT * C) * F;
+                tau = slimeStress(F);
+            } else {
+                F = projectSand((mat3(1.0) + DT * C) * F, C[0][0] + C[1][1] + C[2][2], tau);
+            }
             tau6 = float[](tau[0][0], tau[1][1], tau[2][2], tau[1][0], tau[2][0], tau[2][1]);
             spread = clamp(sqrt(1.0 / max(density * MPM_VOLUME, 0.05)), 1.0, 3.0);
         }
@@ -157,6 +178,13 @@ bool advance(uint i, out Advanced r) {
     float sp = length(v);
     if (sp > maxSpeed) {
         v *= maxSpeed / sp;
+    }
+    if (isSlime() && !asleep) {
+        // Glue: next to a block (anvils excepted) the jelly holds on unless something tears it away faster than its grip.
+        vec3 away = stickyAway(x);
+        if (dot(away, away) > 0.0 && dot(v, normalize(away)) < SLIME_GRIP) {
+            v = vec3(0.0);
+        }
     }
     vec3 xn = asleep ? x : collideStatic(x, x + DT * v, v);
     vec3 pushed = collideEntities(xn, v);

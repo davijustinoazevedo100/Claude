@@ -11,6 +11,7 @@ layout(location = 0) out vec2 vUV;
 layout(location = 1) out vec3 vCenter;
 layout(location = 2) out float vRadius;
 layout(location = 3) out vec4 vData;
+layout(location = 4) out vec3 vVel;
 
 const vec2 CORNERS[6] = vec2[](vec2(-1, -1), vec2(1, -1), vec2(1, 1), vec2(-1, -1), vec2(1, 1), vec2(-1, 1));
 
@@ -69,4 +70,5 @@ void main() {
     vCenter = center;
     vRadius = r;
     vData = vec4(p.pos.w, p.vel.w, alpha, 0.0);
+    vVel = p.vel.xyz * G.domainOrigin.w;
 }

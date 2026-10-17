@@ -1,12 +1,16 @@
 package me.skaffy.client.water;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import me.skaffy.RealisticWater;
 import me.skaffy.block.RealisticSandBlock;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -18,6 +22,9 @@ final class SolidCache {
 	static final byte EMPTY = 0;
 	static final byte FULL = 1;
 	static final byte PARTIAL = 2;
+	/** Cell value of a bouncy solid in the uploaded grid (any non-zero value is solid; slime bounces off this one). */
+	static final int BOUNCY_SOLID = 2;
+	private static final Set<Block> BOUNCY = bouncyBlocks();
 
 	final int res;
 	final boolean ignoreSand;
@@ -27,6 +34,21 @@ final class SolidCache {
 	private static final class Section {
 		final byte[] kind = new byte[4096];
 		final long[] @Nullable [] partial = new long[4096][];
+		final boolean[] bouncy = new boolean[4096];
+	}
+
+	private static Set<Block> bouncyBlocks() {
+		Set<Block> out = new HashSet<>();
+		try {
+			for (Block b : new Block[]{Blocks.ANVIL, Blocks.CHIPPED_ANVIL, Blocks.DAMAGED_ANVIL}) {
+				if (b != null) {
+					out.add(b);
+				}
+			}
+		} catch (LinkageError e) {
+			RealisticWater.LOGGER.warn("Realistic Water: anvils not found, slime won't bounce off them", e);
+		}
+		return out;
 	}
 
 	SolidCache(int res, boolean ignoreSand) {
@@ -55,8 +77,9 @@ final class SolidCache {
 		int i = local(pos.getX(), pos.getY(), pos.getZ());
 		byte oldKind = s.kind[i];
 		long[] oldBits = s.partial[i];
+		boolean oldBouncy = s.bouncy[i];
 		this.voxelizeBlock(level, pos, level.getBlockState(pos), s, i);
-		return oldKind != s.kind[i] || (s.kind[i] == PARTIAL && !java.util.Arrays.equals(oldBits, s.partial[i]));
+		return oldKind != s.kind[i] || oldBouncy != s.bouncy[i] || (s.kind[i] == PARTIAL && !java.util.Arrays.equals(oldBits, s.partial[i]));
 	}
 
 	private @Nullable Section section(ClientLevel level, int sx, int sy, int sz) {
@@ -97,6 +120,7 @@ final class SolidCache {
 
 	private void voxelizeBlock(ClientLevel level, BlockPos pos, BlockState state, Section s, int i) {
 		s.partial[i] = null;
+		s.bouncy[i] = !state.isAir() && BOUNCY.contains(state.getBlock());
 		boolean skip = state.isAir() || (this.ignoreSand && state.getBlock() instanceof RealisticSandBlock);
 		VoxelShape shape = skip ? null : state.getCollisionShape(level, pos);
 		if (shape == null || shape.isEmpty()) {
@@ -137,12 +161,14 @@ final class SolidCache {
 		Section s = this.section(level, bx >> 4, by >> 4, bz >> 4);
 		byte kind;
 		long[] bits = null;
+		int solid = 1;
 		if (s == null) {
 			kind = FULL;
 		} else {
 			int i = local(bx, by, bz);
 			kind = s.kind[i];
 			bits = s.partial[i];
+			solid = s.bouncy[i] ? BOUNCY_SOLID : 1;
 		}
 		int r = this.res;
 		for (int k = 0; k < r; k++) {
@@ -153,10 +179,10 @@ final class SolidCache {
 					if (kind == EMPTY) {
 						v = 0;
 					} else if (kind == FULL) {
-						v = 1;
+						v = solid;
 					} else {
 						int bit = c + r * (j + r * k);
-						v = (int) ((bits[bit >> 6] >>> (bit & 63)) & 1L);
+						v = (int) ((bits[bit >> 6] >>> (bit & 63)) & 1L) * solid;
 					}
 					out[row + c] = v;
 				}

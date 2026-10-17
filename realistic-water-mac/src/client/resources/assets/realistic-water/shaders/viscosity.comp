@@ -1,0 +1,56 @@
+#version 450
+#include "common.glsl"
+layout(local_size_x = 256) in;
+layout(std430, binding = 1) buffer Vel { float vel[]; };
+layout(std430, binding = 2) readonly buffer VelOld { float velOld[]; };
+layout(std430, binding = 3) buffer Kind { uint kind[]; };
+layout(std430, binding = 4) readonly buffer Flags { uint cellFlags[]; };
+layout(push_constant) uniform PC { ivec4 a; ivec4 b; } pc;
+
+// Implicit viscosity, (1 - alpha * laplacian) u = u0 per velocity component, relaxed with red-black Gauss-Seidel.
+// Pass 0 tags the faces, passes 1 and 2 relax the two colours. Faces touching a solid keep the wall (or entity)
+// velocity, so the flow sticks to walls and floors; faces with air on both sides are left out (free surface).
+
+#define FACE_AIR 0u
+#define FACE_FLUID 1u
+#define FACE_SOLID 2u
+
+const ivec3 NB[6] = ivec3[](ivec3(1, 0, 0), ivec3(-1, 0, 0), ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1), ivec3(0, 0, -1));
+
+uint typeAt(ivec3 c) {
+    return inBox(c) ? (cellFlags[cellIndex(c)] & 0xFFu) : CELL_AIR;
+}
+
+void main() {
+    int comp;
+    ivec3 f;
+    if (!boxFace(int(GID_U), comp, f)) {
+        return;
+    }
+    int i = faceIndex(comp, f);
+    if (pc.a.x == 0) {
+        uint ta = typeAt(f - axisVec(comp));
+        uint tb = typeAt(f);
+        kind[i] = ta == CELL_SOLID || tb == CELL_SOLID ? FACE_SOLID : (ta == CELL_FLUID || tb == CELL_FLUID ? FACE_FLUID : FACE_AIR);
+        return;
+    }
+    if (((f.x + f.y + f.z) & 1) != pc.a.x - 1 || kind[i] != FACE_FLUID) {
+        return;
+    }
+    float sum = 0.0;
+    float n = 0.0;
+    for (int k = 0; k < 6; k++) {
+        ivec3 nf = f + NB[k];
+        if (!faceInBox(comp, nf)) {
+            continue;
+        }
+        int j = faceIndex(comp, nf);
+        if (kind[j] != FACE_AIR) {
+            sum += vel[j];
+            n += 1.0;
+        }
+    }
+    float alpha = G.matC.x;
+    float u0 = velOld[i] + G.gravityDt[comp] * DT;
+    vel[i] = (u0 + alpha * sum) / (1.0 + alpha * n);
+}

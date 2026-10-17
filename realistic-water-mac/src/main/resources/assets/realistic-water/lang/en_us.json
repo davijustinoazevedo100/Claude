@@ -3,5 +3,6 @@
   "block.realistic-water.realistic_lava": "Realistic Lava",
   "block.realistic-water.realistic_sand": "Realistic Sand",
   "item.realistic-water.realistic_water_bucket": "Realistic Water Bucket",
-  "item.realistic-water.realistic_lava_bucket": "Realistic Lava Bucket"
+  "item.realistic-water.realistic_lava_bucket": "Realistic Lava Bucket",
+  "block.realistic-water.realistic_slime": "Realistic Slime"
 }

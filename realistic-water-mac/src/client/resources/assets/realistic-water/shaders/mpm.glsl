@@ -10,6 +10,10 @@
 #define MPM_WAKE_SPEED G.matE.z
 #define MPM_IMPACT_RATE G.matC.w
 #define MPM_IMPACT_LOG_J G.matE.w
+#define SLIME_BOUNCE G.matC.x
+#define SLIME_DAMPING G.matD.x
+#define SLIME_GRIP G.matD.y
+#define BOUNCY_SOLID 2u
 
 const float MASS_FP = 1048576.0;
 const float MOM_FP = 131072.0;
@@ -78,6 +82,17 @@ void svd3(mat3 F, out mat3 U, out vec3 S, out mat3 V) {
 
 mat3 diag3(vec3 d) {
     return mat3(d.x, 0.0, 0.0, 0.0, d.y, 0.0, 0.0, 0.0, d.z);
+}
+
+// Fixed-corotated elasticity (Stomakhin et al. 2012) as Kirchhoff stress: tau = 2 mu (F - R) F^T + lambda (J - 1) J I.
+mat3 slimeStress(mat3 F) {
+    mat3 U;
+    vec3 S;
+    mat3 V;
+    svd3(F, U, S, V);
+    float J = S.x * S.y * S.z;
+    vec3 d = 2.0 * MPM_MU * (S - 1.0) * S + MPM_LAMBDA * (J - 1.0) * J;
+    return U * diag3(d) * transpose(U);
 }
 
 mat3 projectSand(mat3 F, float squeeze, out mat3 tau) {

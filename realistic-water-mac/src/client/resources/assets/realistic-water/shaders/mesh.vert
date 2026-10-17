@@ -5,6 +5,7 @@ layout(std430, binding = 2) readonly buffer Quads { uvec4 quads[]; };
 layout(location = 0) out vec3 vView;
 layout(location = 1) out vec3 vNormal;
 layout(location = 2) out float vWall;
+layout(location = 3) out vec3 vGrid;
 
 const int CORNER[6] = int[](0, 1, 2, 0, 2, 3);
 
@@ -17,5 +18,6 @@ void main() {
     vView = view.xyz;
     vNormal = mat3(G.view) * n;
     vWall = wall ? 1.0 : 0.0;
+    vGrid = v.xyz;
     gl_Position = G.proj * view;
 }

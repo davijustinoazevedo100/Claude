@@ -31,8 +31,8 @@ public final class WaterSettings {
 	public static float wwTrappedAirMax = 14.0F;
 	public static float wwWaveCrestMin = 0.4F;
 	public static float wwWaveCrestMax = 2.5F;
-	public static float wwFoamLifeMin = 1.5F;
-	public static float wwFoamLifeMax = 4.0F;
+	public static float wwFoamLifeMin = 2.0F;
+	public static float wwFoamLifeMax = 5.0F;
 	public static float wwBubbleBuoyancy = 2.5F;
 	public static float wwBubbleDrag = 0.6F;
 	public static float wwSprayDrag = 0.4F;
@@ -111,8 +111,10 @@ public final class WaterSettings {
 	public static boolean sandSounds = true;
 
 	public static int lavaResolution = 6;
-	public static float lavaFlipRatio = 0.9993F;
-	public static float lavaMaxSpeed = 5.0F;
+	public static float lavaFlipRatio = 0.97F;
+	public static float lavaMaxSpeed = 3.5F;
+	public static float lavaViscosity = 3.0F;
+	public static int lavaViscositySweeps = 10;
 	public static float lavaFilmFriction = 140.0F;
 	public static float lavaStrandedTime = 5.0F;
 	public static int lavaStrandedNeighbors = 16;
@@ -132,6 +134,27 @@ public final class WaterSettings {
 	public static float lavaSpecular = 2.5F;
 	public static boolean lavaFlowSounds = true;
 	public static boolean lavaIgniteFlammables = true;
+
+	public static int slimeResolution = 8;
+	public static float slimeStiffness = 90.0F;
+	public static float slimePoisson = 0.38F;
+	public static float slimeDamping = 0.2F;
+	public static float slimeBounce = 0.75F;
+	public static float slimeGrip = 12.0F;
+	public static float slimeCfl = 0.4F;
+	public static int slimeMaxStepsPerFrame = 12;
+	public static float slimeMaxSpeed = 30.0F;
+	public static float slimeRefraction = 0.08F;
+	public static float slimeAbsorbR = 2.2F;
+	public static float slimeAbsorbG = 0.45F;
+	public static float slimeAbsorbB = 2.8F;
+	public static float slimeScatterR = 0.36F;
+	public static float slimeScatterG = 0.76F;
+	public static float slimeScatterB = 0.2F;
+	public static float slimeScatterDensity = 1.3F;
+	public static float slimeSurfaceSmoothing = 0.5F;
+	public static float slimeRoughness = 0.12F;
+	public static float slimeSpecular = 5.0F;
 
 	public static String ffmpeg = "";
 	public static boolean renderFreezeWorld = true;

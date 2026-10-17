@@ -2,6 +2,7 @@ package me.skaffy;
 
 import me.skaffy.block.RealisticLavaBlock;
 import me.skaffy.block.RealisticSandBlock;
+import me.skaffy.block.RealisticSlimeBlock;
 import me.skaffy.block.RealisticWaterBlock;
 import me.skaffy.fluid.RealisticLavaFluid;
 import me.skaffy.fluid.RealisticWaterFluid;
@@ -90,7 +91,32 @@ public final class ModContent {
 	public static final ResourceKey<Item> REALISTIC_SAND_ITEM_KEY = ResourceKey.create(Registries.ITEM, RealisticWater.id("realistic_sand"));
 	public static final Item REALISTIC_SAND_ITEM = registerBlockItem(REALISTIC_SAND_ITEM_KEY, REALISTIC_SAND);
 
+	public static final ResourceKey<Block> REALISTIC_SLIME_KEY = ResourceKey.create(Registries.BLOCK, RealisticWater.id("realistic_slime"));
+	public static final Block REALISTIC_SLIME = Registry.register(BuiltInRegistries.BLOCK, REALISTIC_SLIME_KEY, new RealisticSlimeBlock(
+		BlockBehaviour.Properties.of()
+			.mapColor(constant(MapColor.class, "COLOR_LIGHT_GREEN", MapColor.SAND))
+			.strength(0.3F)
+			.sound(constant(SoundType.class, "SLIME_BLOCK", SoundType.SAND))
+			.noOcclusion()
+			.pushReaction(PushReaction.POPPED)
+			.isSuffocating((state, level, pos) -> false)
+			.isViewBlocking((state, level, pos, box) -> false)
+			.setId(REALISTIC_SLIME_KEY)
+	));
+
+	public static final ResourceKey<Item> REALISTIC_SLIME_ITEM_KEY = ResourceKey.create(Registries.ITEM, RealisticWater.id("realistic_slime"));
+	public static final Item REALISTIC_SLIME_ITEM = registerBlockItem(REALISTIC_SLIME_ITEM_KEY, REALISTIC_SLIME);
+
 	private ModContent() {
+	}
+
+	// Cosmetic constants the mod didn't use before, looked up by name so a renamed one can't stop the game from starting.
+	private static <T> T constant(Class<T> owner, String name, T fallback) {
+		try {
+			return owner.cast(owner.getField(name).get(null));
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return fallback;
+		}
 	}
 
 	private static Item registerBlockItem(ResourceKey<Item> key, Block block) {
@@ -106,6 +132,9 @@ public final class ModContent {
 				output.insertAfter(Items.LAVA_BUCKET, REALISTIC_LAVA_BUCKET);
 			});
 		CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.NATURAL_BLOCKS)
-			.register(output -> output.insertAfter(Items.SAND, REALISTIC_SAND_ITEM));
+			.register(output -> {
+				output.insertAfter(Items.SAND, REALISTIC_SAND_ITEM);
+				output.insertAfter(REALISTIC_SAND_ITEM, REALISTIC_SLIME_ITEM);
+			});
 	}
 }

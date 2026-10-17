@@ -3,7 +3,7 @@
 	"id": "realistic-water",
 	"version": "${version}",
 	"name": "Realistic Water (macOS fix)",
-	"description": "Ultra realistic water and sand in Minecraft! Modified build with macOS/MoltenVK fixes, not the original mod. Original mod by Skaffy: https://github.com/sskaffy/Realistic-Water",
+	"description": "Ultra realistic water, lava, sand and slime in Minecraft! Modified build with macOS/MoltenVK fixes, viscous lava and Realistic Slime, not the original mod. Original mod by Skaffy: https://github.com/sskaffy/Realistic-Water",
 	"authors": [
 		"Skaffy"
 	],

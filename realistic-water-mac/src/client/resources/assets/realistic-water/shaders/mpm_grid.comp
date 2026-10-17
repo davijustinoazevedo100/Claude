@@ -5,8 +5,12 @@ layout(local_size_x = 256) in;
 layout(std430, binding = 1) buffer Grid { ivec4 grid[]; };
 layout(std430, binding = 2) readonly buffer Static { uint staticSolid[]; };
 
+uint solidKind(ivec3 c) {
+    return inGrid(c) ? staticSolid[cellIndex(c)] : 0u;
+}
+
 bool solid(ivec3 c) {
-    return inGrid(c) && staticSolid[cellIndex(c)] != 0u;
+    return solidKind(c) != 0u;
 }
 
 vec3 slide(vec3 v, vec3 n) {
@@ -17,6 +21,41 @@ vec3 slide(vec3 v, vec3 n) {
     vec3 vt = v - vn * n;
     float t = length(vt);
     return t > -MPM_WALL_FRICTION * vn ? vt * (1.0 + MPM_WALL_FRICTION * vn / t) : vec3(0.0);
+}
+
+// Slime sticks to whatever it touches; off bouncy blocks (anvils) a fast hit rebounds instead.
+vec3 slimeContact(ivec3 c, vec3 v) {
+    uint own = solidKind(c);
+    bool sticky = own != 0u && own != BOUNCY_SOLID;
+    bool bouncy = own == BOUNCY_SOLID;
+    vec3 n = vec3(0.0);
+    for (int a = 0; a < 3; a++) {
+        ivec3 e = axisVec(a);
+        uint lo = solidKind(c - e);
+        uint hi = solidKind(c + e);
+        if (own != 0u) {
+            n[a] += (hi == 0u ? 1.0 : 0.0) - (lo == 0u ? 1.0 : 0.0);
+        } else {
+            n[a] += (lo != 0u ? 1.0 : 0.0) - (hi != 0u ? 1.0 : 0.0);
+        }
+        sticky = sticky || (lo != 0u && lo != BOUNCY_SOLID) || (hi != 0u && hi != BOUNCY_SOLID);
+        bouncy = bouncy || lo == BOUNCY_SOLID || hi == BOUNCY_SOLID;
+    }
+    if (sticky) {
+        return vec3(0.0);
+    }
+    if (bouncy) {
+        if (dot(n, n) < 1e-6) {
+            return vec3(0.0);
+        }
+        n = normalize(n);
+        float vn = dot(v, n);
+        if (vn < 0.0) {
+            float rebound = -vn > 0.5 * G.camGrid.w ? SLIME_BOUNCE : 0.0;
+            v -= (1.0 + rebound) * vn * n;
+        }
+    }
+    return v;
 }
 
 void main() {
@@ -33,7 +72,9 @@ void main() {
         return;
     }
     vec3 v = vec3(g.yzw) / MOM_FP / mass + G.gravityDt.xyz * DT;
-    if (solid(c)) {
+    if (isSlime()) {
+        v = slimeContact(c, v);
+    } else if (solid(c)) {
         vec3 n = vec3(0.0);
         for (int a = 0; a < 3; a++) {
             ivec3 e = axisVec(a);
