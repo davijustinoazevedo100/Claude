@@ -217,18 +217,18 @@ public final class WaterWorld {
 	private SolidCache solids(Material material, int res) {
 		if (material == Material.SLIME) {
 			if (this.slimeSolids == null || this.slimeSolids.res != res) {
-				this.slimeSolids = new SolidCache(res, true);
+				this.slimeSolids = SolidCache.forMaterial(material, res);
 			}
 			return this.slimeSolids;
 		}
 		if (material.isGranular()) {
 			if (this.sandSolids == null || this.sandSolids.res != res) {
-				this.sandSolids = new SolidCache(res, true);
+				this.sandSolids = SolidCache.forMaterial(material, res);
 			}
 			return this.sandSolids;
 		}
 		if (this.solids == null || this.solids.res != res) {
-			this.solids = new SolidCache(res, false);
+			this.solids = SolidCache.forMaterial(material, res);
 		}
 		return this.solids;
 	}

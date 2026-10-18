@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import me.skaffy.RealisticWater;
 import me.skaffy.block.RealisticSandBlock;
+import me.skaffy.block.RealisticSlimeBlock;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -31,7 +32,8 @@ final class SolidCache {
 	private static final Set<Block> COLD = blocks("ICE", "PACKED_ICE", "BLUE_ICE", "FROSTED_ICE");
 
 	final int res;
-	final boolean ignoreSand;
+	/** The block the simulated material itself is kept in: it is the material, not an obstacle (the slime block is solid). */
+	private final @Nullable Class<? extends Block> own;
 	private final int bitsPerBlock;
 	private final Long2ObjectOpenHashMap<Section> sections = new Long2ObjectOpenHashMap<>();
 
@@ -56,9 +58,13 @@ final class SolidCache {
 		return out;
 	}
 
-	SolidCache(int res, boolean ignoreSand) {
+	static SolidCache forMaterial(Material material, int res) {
+		return new SolidCache(res, material == Material.SLIME ? RealisticSlimeBlock.class : material.isGranular() ? RealisticSandBlock.class : null);
+	}
+
+	SolidCache(int res, @Nullable Class<? extends Block> own) {
 		this.res = res;
-		this.ignoreSand = ignoreSand;
+		this.own = own;
 		this.bitsPerBlock = res * res * res;
 	}
 
@@ -127,7 +133,7 @@ final class SolidCache {
 		s.partial[i] = null;
 		Block block = state.isAir() ? null : state.getBlock();
 		s.tag[i] = block == null ? 0 : BOUNCY.contains(block) ? TAG_BOUNCY : COLD.contains(block) ? TAG_COLD : 0;
-		boolean skip = state.isAir() || (this.ignoreSand && state.getBlock() instanceof RealisticSandBlock);
+		boolean skip = state.isAir() || (this.own != null && this.own.isInstance(state.getBlock()));
 		VoxelShape shape = skip ? null : state.getCollisionShape(level, pos);
 		if (shape == null || shape.isEmpty()) {
 			s.kind[i] = EMPTY;
