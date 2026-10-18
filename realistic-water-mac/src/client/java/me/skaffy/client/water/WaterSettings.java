@@ -213,6 +213,13 @@ public final class WaterSettings {
 	public static float mudRoughness = 0.16F;
 	public static float mudSpecular = 3.5F;
 
+	public static boolean currents = true;
+	public static float currentPlayerGrip = 0.05F;
+	public static boolean waterErosion = true;
+	public static float erosionSpeed = 2.5F;
+	public static float soilErosionSpeed = 5.0F;
+	public static float erosionRate = 0.04F;
+
 	public static float oozeSpeed = 1.3F;
 	public static float oozeWidth = 0.75F;
 

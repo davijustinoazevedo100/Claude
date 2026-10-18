@@ -82,6 +82,8 @@ public final class WaterWorld {
 	static final int MAX_REGIONS = 16;
 	private static final int JOIN_DISTANCE = 16;
 	private static final int SYNC_INTERVAL = 30;
+	/** Water is read back more often, for its currents; its blocks are still synced every third time. */
+	private static final int FLOW_INTERVAL = 10;
 	private static final int ECHO_TIMEOUT = 200;
 	private static final int BIOME_CHECK_TICKS = 40;
 	private static final int SHATTER_EFFECT_TICKS = 4;
@@ -132,6 +134,7 @@ public final class WaterWorld {
 	private final Echoes honeyEchoes = new Echoes();
 	private final Echoes mudEchoes = new Echoes();
 	private final List<Object[]> pendingFills = new ArrayList<>();
+	private final WaterCurrents currents = new WaterCurrents();
 	private final FlowSounds sounds = new FlowSounds();
 	private @Nullable SolidCache solids;
 	private @Nullable SolidCache sandSolids;
@@ -831,6 +834,13 @@ public final class WaterWorld {
 			if (!this.regions.contains(r)) {
 				continue;
 			}
+			r.latestFill = fill;
+			if (r.material == Material.WATER && isHost()) {
+				this.currents.erode(level, fill);
+			}
+			if (r.material == Material.WATER && r.fillCount++ % (SYNC_INTERVAL / FLOW_INTERVAL) != 0) {
+				continue;
+			}
 			if (listener != null) {
 				this.sounds.onFill(r.material, fill, listener);
 			}
@@ -839,6 +849,7 @@ public final class WaterWorld {
 			}
 		}
 		this.pendingFills.clear();
+		this.currents.tick(level, mc.player, this.regions, isHost());
 		this.ticks++;
 		// Say so right away (once) when the game isn't on Vulkan, instead of only when the first realistic block shows up.
 		if (this.ticks == 100 && mc.player != null) {
@@ -1189,7 +1200,8 @@ public final class WaterWorld {
 			}
 			int regionSteps = !mpm ? steps : r.dormant() ? 0 : slime ? slimeSteps : sandSteps;
 			float regionDt = !mpm ? stepDt : slime ? slimeDt : sandDt;
-			if (readFill && r.initialized() && (this.frameCounter + r.id) % SYNC_INTERVAL == 0) {
+			int interval = r.material == Material.WATER ? FLOW_INTERVAL : SYNC_INTERVAL;
+			if (readFill && r.initialized() && (this.frameCounter + r.id) % interval == 0) {
 				r.fillRequested = true;
 			}
 			int slot = Vk.ringSlot() * MAX_REGIONS + i;

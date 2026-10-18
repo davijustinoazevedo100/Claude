@@ -1,6 +1,8 @@
 package me.skaffy;
 
 import me.skaffy.dispenser.OozeDispenseBehavior;
+import me.skaffy.net.CurrentsPayload;
+import me.skaffy.net.ErodePayload;
 import me.skaffy.net.HoneySyncPayload;
 import me.skaffy.net.LavaSyncPayload;
 import me.skaffy.net.MudSyncPayload;
@@ -35,6 +37,8 @@ public class RealisticWater implements ModInitializer {
 		PayloadTypeRegistry.serverboundPlay().register(HoneySyncPayload.TYPE, HoneySyncPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(MudSyncPayload.TYPE, MudSyncPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(RemoveAllWaterPayload.TYPE, RemoveAllWaterPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(CurrentsPayload.TYPE, CurrentsPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(ErodePayload.TYPE, ErodePayload.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(OozePayload.TYPE, OozePayload.CODEC);
 		OozeDispenseBehavior.register();
 		ServerPlayNetworking.registerGlobalReceiver(WaterSyncPayload.TYPE, (payload, context) -> {
@@ -63,6 +67,16 @@ public class RealisticWater implements ModInitializer {
 			}
 		});
 		ServerPlayNetworking.registerGlobalReceiver(MudSyncPayload.TYPE, (payload, context) -> {
+			if (isAuthority(context.server(), context.player())) {
+				context.server().execute(() -> payload.apply(context.player()));
+			}
+		});
+		ServerPlayNetworking.registerGlobalReceiver(CurrentsPayload.TYPE, (payload, context) -> {
+			if (isAuthority(context.server(), context.player())) {
+				context.server().execute(() -> payload.apply(context.player()));
+			}
+		});
+		ServerPlayNetworking.registerGlobalReceiver(ErodePayload.TYPE, (payload, context) -> {
 			if (isAuthority(context.server(), context.player())) {
 				context.server().execute(() -> payload.apply(context.player()));
 			}

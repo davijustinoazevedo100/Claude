@@ -74,13 +74,29 @@ public final class WaterRegion implements AutoCloseable {
 	public record Removal(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
 	}
 
-	public record Fill(int x, int y, int z, int dx, int dy, int dz, byte[] fill, byte[] speed) {
+	public record Fill(int x, int y, int z, int dx, int dy, int dz, byte[] fill, byte[] speed, int[] flow) {
 		float fullness(int i) {
 			return (this.fill[i] & 0xFF) / 255.0F;
 		}
 
 		float blocksPerSecond(int i) {
 			return (this.speed[i] & 0xFF) / 16.0F;
+		}
+
+		/** The block's mean flow along an axis (0 = x, 1 = y, 2 = z), blocks/s. */
+		float flow(int i, int axis) {
+			return (((this.flow[i] >>> (10 * axis)) & 1023) - 512) / 32.0F;
+		}
+
+		/** The index of the block at world (bx, by, bz), or -1 outside. */
+		int index(int bx, int by, int bz) {
+			int lx = bx - this.x;
+			int ly = by - this.y;
+			int lz = bz - this.z;
+			if (lx < 0 || ly < 0 || lz < 0 || lx >= this.dx || ly >= this.dy || lz >= this.dz) {
+				return -1;
+			}
+			return lx + this.dx * (ly + this.dy * lz);
 		}
 	}
 
@@ -227,6 +243,9 @@ public final class WaterRegion implements AutoCloseable {
 	private boolean fieldStale = true;
 	int lastWhitewaterCount;
 	float lastMaxSpeed;
+	/** The latest block fill and flow read back (null until the first), and how many have come back. */
+	@Nullable Fill latestFill;
+	int fillCount;
 	/** How fast a dispenser is squeezing material into this region this frame (blocks/s), 0 when none is. */
 	float oozeSpeed;
 	private int emittedSinceReadback;
@@ -357,16 +376,18 @@ public final class WaterRegion implements AutoCloseable {
 		if (meta != null) {
 			int n = meta[3] * meta[4] * meta[5];
 			VkBuf rb = this.fillReadback[slot];
-			rb.invalidate(0, n * 4L);
+			rb.invalidate(0, n * 8L);
 			byte[] data = new byte[n];
 			byte[] speed = new byte[n];
+			int[] flow = new int[n];
 			ByteBuffer fb = rb.mapped();
 			for (int i = 0; i < n; i++) {
 				int packed = fb.getInt(i * 4);
 				data[i] = (byte) packed;
 				speed[i] = (byte) (packed >>> 8);
+				flow[i] = fb.getInt((n + i) * 4);
 			}
-			fill = new Fill(meta[0], meta[1], meta[2], meta[3], meta[4], meta[5], data, speed);
+			fill = new Fill(meta[0], meta[1], meta[2], meta[3], meta[4], meta[5], data, speed, flow);
 			this.fillMeta[slot] = null;
 		}
 		return fill;
@@ -890,17 +911,17 @@ public final class WaterRegion implements AutoCloseable {
 		if (n <= 0) {
 			return;
 		}
-		if (this.fillBuffer == null || this.fillBuffer.size < n * 4) {
+		if (this.fillBuffer == null || this.fillBuffer.size < n * 8) {
 			if (this.fillBuffer != null) {
 				Vk.destroyLater(this.fillBuffer);
 			}
-			this.fillBuffer = VkBuf.device(n * 4 * 2, 0);
+			this.fillBuffer = VkBuf.device(n * 8 * 2, 0);
 		}
-		if (this.fillReadback[slot] == null || this.fillReadback[slot].size < n * 4) {
+		if (this.fillReadback[slot] == null || this.fillReadback[slot].size < n * 8) {
 			if (this.fillReadback[slot] != null) {
 				Vk.destroyLater(this.fillReadback[slot]);
 			}
-			this.fillReadback[slot] = VkBuf.readback(n * 4 * 2);
+			this.fillReadback[slot] = VkBuf.readback(n * 8 * 2);
 		}
 		Vk.barrier(cb);
 		boolean mpm = this.material.usesMpm();
@@ -915,7 +936,7 @@ public final class WaterRegion implements AutoCloseable {
 		fill.push(cb, x0, y0, z0, 0, dx, dy, dz, 0);
 		fill.dispatch(cb, ComputeProgram.groups(n, 64), 1, 1);
 		Vk.barrier(cb);
-		this.fillBuffer.copyTo(cb, this.fillReadback[slot], 0, 0, n * 4);
+		this.fillBuffer.copyTo(cb, this.fillReadback[slot], 0, 0, n * 8);
 		this.fillMeta[slot] = new int[]{this.ox + x0, this.oy + y0, this.oz + z0, dx, dy, dz};
 	}
 

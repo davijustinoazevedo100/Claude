@@ -15,15 +15,14 @@ bool fluidAt(ivec3 c) {
     return inBox(c) && (cellFlags[cellIndex(c)] & 0xFFu) == CELL_FLUID;
 }
 
-float cellSpeed(ivec3 c) {
+vec3 cellVelocity(ivec3 c) {
 #ifdef MPM
-    return length(grid[cellIndex(c)].xyz);
+    return grid[cellIndex(c)].xyz;
 #else
-    vec3 u = 0.5 * vec3(
+    return 0.5 * vec3(
         vel[faceIndex(0, c)] + vel[faceIndex(0, c + ivec3(1, 0, 0))],
         vel[faceIndex(1, c)] + vel[faceIndex(1, c + ivec3(0, 1, 0))],
         vel[faceIndex(2, c)] + vel[faceIndex(2, c + ivec3(0, 0, 1))]);
-    return length(u);
 #endif
 }
 
@@ -37,6 +36,8 @@ void main() {
     ivec3 block = pc.a.xyz + ivec3(t % nb.x, (t / nb.x) % nb.y, t / (nb.x * nb.y));
     float sum = 0.0;
     float speed = 0.0;
+    vec3 flow = vec3(0.0);
+    float fluidCells = 0.0;
     for (int k = 0; k < res * res * res; k++) {
         ivec3 c = block * res + ivec3(k % res, (k / res) % res, k / (res * res));
         if (!inBox(c)) {
@@ -51,11 +52,18 @@ void main() {
         } else {
             sum += float(cellCount[i]);
             if ((f & 0xFFu) == CELL_FLUID) {
-                speed = max(speed, cellSpeed(c));
+                vec3 u = cellVelocity(c);
+                speed = max(speed, length(u));
+                flow += u;
+                fluidCells += 1.0;
             }
         }
     }
     uint full = uint(clamp(sum / (G.simA.y * float(res * res * res)), 0.0, 1.0) * 255.0 + 0.5);
     uint fast = uint(clamp(speed / float(res) * 16.0, 0.0, 255.0));
     fill[t] = full | (fast << 8);
+    // Second half: the block's mean flow in 1/32 blocks/s, three 10-bit fields (what currents push things with).
+    vec3 mean = fluidCells > 0.0 ? flow / (fluidCells * float(res)) : vec3(0.0);
+    uvec3 q = uvec3(clamp(ivec3(round(mean * 32.0)), ivec3(-511), ivec3(511)) + 512);
+    fill[nb.x * nb.y * nb.z + t] = q.x | (q.y << 10) | (q.z << 20);
 }
