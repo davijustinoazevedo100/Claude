@@ -14,6 +14,8 @@ public final class WaterSettings {
 	public static float maxDt = 1.0F / 40.0F;
 	public static int maxStepsPerFrame = 4;
 	public static int renderMaxStepsPerFrame = 64;
+	/** Frames slower than this (ms) make the simulation take fewer steps per frame (see WaterWorld). */
+	public static float frameBudgetMs = 40.0F;
 	public static int cgIterations = 5;
 	public static int mgCoarseSweeps = 12;
 	public static int extrapolationLayers = 4;

@@ -10,4 +10,9 @@ void main() {
     meshCounters[5] = 1u;
     meshCounters[6] = 0u;
     meshCounters[7] = 0u;
+    // Droplets (picked by droplet_cull.comp): one quad per droplet particle.
+    meshCounters[12] = 6u;
+    meshCounters[13] = min(meshCounters[8], uint(pc.a.z));
+    meshCounters[14] = 0u;
+    meshCounters[15] = 0u;
 }

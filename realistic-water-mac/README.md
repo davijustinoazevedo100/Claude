@@ -34,26 +34,55 @@ things the original doesn't have (see "Additions" below).
   thick and wobbly. It sticks to walls; on the ground it just rests (and bounces when it lands hard, harder off
   anvils); stuck under a ceiling it hangs on for a few seconds, then sags, peels off and drops in one piece. The
   block is solid, so you can stand on it, and anything pushing into it (mobs, pistons) shoves and squeezes it
-  without tearing it apart. Spawn one in front of you with `/water slime [size]`, remove all with
-  `/water remove slime`. Tunable with
-  `/water set slimeStiffness|slimeDamping|slimeBounce|slimeFloorBounce|slimeGrip|slimeCeilingHold <value>`.
+  without tearing it apart. It is a trampoline too: whatever lands on it bounces back up with no fall damage
+  (sneak to land without bouncing), the jelly gives way under the landing and springs back wobbling, feet sink a
+  little into its top and walking on it is squishy. Spawn one in front of you with `/water slime [size]`, remove
+  all with `/water remove slime`. Tunable with
+  `/water set slimeStiffness|slimeDamping|slimeBounce|slimeFloorBounce|slimeGrip|slimeCeilingHold|slimeTrampoline <value>`.
 - **Realistic Honey** (next to Realistic Slime): amber honey that holds the shape of the block until something
   disturbs it: walking into it, or a piston nudging it, makes the whole lump come apart and run as a very thick,
-  slow liquid that clings to walls. `/water honey [size]` drops a lump of running honey, `/water remove honey`
+  slow liquid that clings to walls. It is sticky: wading through it slows you right down, and it clings to whatever
+  moves through it and gets dragged along. `/water honey [size]` drops a lump of running honey, `/water remove honey`
   removes it. Tunable with `/water set honeyViscosity|honeyMaxSpeed|honeyBreakSpeed|honeyBreakRadius <value>`.
+- **Realistic Mud** (next to Realistic Honey): a heavy brown paste. A block of it slumps into a mound and then holds
+  its shape (it has a yield stress: where it barely shears it stiffens), it is lumpy with wet shiny patches, slows
+  down whoever wades into it and clings to them. `/water mud [size]` drops a lump, `/water remove mud` removes it.
+  Tunable with `/water set mudViscosity|mudYieldStress|mudMaxSpeed <value>`.
+- **Dispensers squeeze out slime, honey and mud**: put Realistic Slime, Honey or Mud in a dispenser and it oozes out
+  of its mouth as a soft rope (slime hangs from the mouth, then drops off whole; honey and mud run down). The space
+  in front has to be free, otherwise the dispenser spits the item out like any other. `oozeSpeed` and `oozeWidth`
+  tune it.
+- **Water carries things along**: running water pushes you, items, mobs, boats and falling blocks with its current,
+  and fast water tears sand, gravel and concrete powder (and, in a strong flood, dirt, grass, mud and clay) out of its
+  bed and banks and carries them off downstream, where they settle again. `/water set waterErosion false` stops the
+  erosion, `/water set currents false` the pushing; `erosionSpeed`, `soilErosionSpeed`, `erosionRate` and
+  `currentPlayerGrip` tune them.
 - **Slow, thick lava**: lava now has real viscosity (an implicit viscosity solve on the grid with no-slip walls),
   so it creeps down walls and spreads in thick lobes instead of falling at a fixed speed
   (`lavaViscosity`, `lavaViscositySweeps`, `lavaMaxSpeed`).
 - **Molten lava look**: a cooled crust torn into streaks along the flow, with bright hot channels between them;
   the pattern moves with the lava and its relief catches the sunlight.
-- **Better foam**: foam lasts longer, gathers in islands and streaks with a bubbly texture that drifts with
-  the current, and is lit by the sun.
+- **Foam is off by default** (it costs a lot and many found it distracting); `/water set whitewater true` brings it
+  back, now longer-lasting, gathered in islands and streaks with a bubbly texture that drifts with the current.
 - **Freezing water**: water touching ice (ice, packed ice, blue ice or frosted ice blocks) freezes where it is, and the
   frost spreads through the water touching it, so a splash or a waterfall stops in time as ice. In snowy biomes water
   also freezes from its surface. Walking (or anything else moving) into frozen water shatters it like glass, with the
   ice-breaking sound and shards. Once nothing cold is left nearby the ice slowly melts back into water. Tunable with
   `/water set freezing|freezeSpeed|coldBiomeFreezeRate|meltRate|shatterRadius|shatterEffects <value>`
   (`/water set coldBiomeFreezeRate 0` keeps water liquid in snowy biomes, `/water set freezing false` turns it all off).
+
+### Performance
+
+- Still water (and lava, honey, mud) goes to sleep: once nothing in a body has moved for half a second it takes no
+  simulation steps and its surface isn't rebuilt, until something can disturb it again (a body or a piston coming
+  near, a block changing, a spring feeding it, freezing). A still pool now costs only its drawing.
+- Droplets are picked out once when the surface is rebuilt instead of every particle being tested in every frame,
+  for every vertex of its quad, in two passes.
+- Each body steps as often as its own flow needs (a slow lava pool no longer steps as often as a waterfall elsewhere),
+  and when the game drops below about 25 fps (`frameBudgetMs`) the simulation takes fewer steps per frame and runs a
+  little slow-motion instead of dragging the frame rate down further.
+- The thickness pass is drawn at half resolution, foam buffers are only allocated when foam is on, and the foam pass
+  is skipped when it is off.
 
 ### Other fixes
 

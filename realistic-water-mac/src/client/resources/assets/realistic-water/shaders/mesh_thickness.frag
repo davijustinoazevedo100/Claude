@@ -1,5 +1,9 @@
 #version 450
 #include "common.glsl"
+// The thickness target is THICKNESS_SCALE times smaller than the screen on each side.
+#ifndef THICKNESS_SCALE
+#define THICKNESS_SCALE 1.0
+#endif
 layout(std430, binding = 3) readonly buffer ViewState { vec4 viewState; };
 layout(binding = 4) uniform sampler2D sceneDepth;
 layout(location = 0) in vec3 vView;
@@ -13,7 +17,7 @@ float linearDepth(float device) {
 }
 
 void main() {
-    vec2 uv = gl_FragCoord.xy * G.screen.zw;
+    vec2 uv = gl_FragCoord.xy * G.screen.zw * THICKNESS_SCALE;
     float dist = min(-vView.z, linearDepth(texture(sceneDepth, uv).r));
     vec3 gn = cross(dFdx(vView), dFdy(vView));
     if (dot(gn, vNormal) < 0.0) {

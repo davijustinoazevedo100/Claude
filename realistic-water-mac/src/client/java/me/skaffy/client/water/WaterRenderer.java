@@ -54,8 +54,10 @@ public final class WaterRenderer implements AutoCloseable {
 		Map<String, String> droplets = Map.of("DROPLETS", "1", "VIEW_BINDING", "3");
 		this.meshFront = new GraphicsProgram("mesh.vert", "mesh_front.frag", Map.of(), front, U, S, S, S, S, S);
 		this.dropletFront = new GraphicsProgram("particle.vert", "droplet_front.frag", droplets, front, U, S, S, S);
-		this.meshThickness = new GraphicsProgram("mesh.vert", "mesh_thickness.frag", Map.of(), add, U, S, S, S, T);
-		this.dropletThickness = new GraphicsProgram("particle.vert", "droplet_thickness.frag", droplets, add, U, S, S, S, T);
+		// How much liquid each pixel looks through only tints and bends the view, smoothly: it is drawn at half resolution.
+		this.meshThickness = new GraphicsProgram("mesh.vert", "mesh_thickness.frag", Map.of("THICKNESS_SCALE", "2.0"), add, U, S, S, S, T);
+		this.dropletThickness = new GraphicsProgram("particle.vert", "droplet_thickness.frag",
+			Map.of("DROPLETS", "1", "VIEW_BINDING", "3", "THICKNESS_SCALE", "2.0"), add, U, S, S, S, T);
 		this.whitewaterProgram = new GraphicsProgram("particle.vert", "whitewater.frag", Map.of("VIEW_BINDING", "4"),
 			new GraphicsProgram.State(VkTex.RGBA16F, VK10.VK_FORMAT_UNDEFINED, false, false, VK10.VK_COMPARE_OP_ALWAYS, GraphicsProgram.Blend.ADD),
 			U, S, T, T, S);
@@ -92,7 +94,7 @@ public final class WaterRenderer implements AutoCloseable {
 		this.sceneColor = new VkTex(VkTex.RGBA8, w, h, VkTex.COPY_DST | VkTex.SAMPLED);
 		this.gbuffer = new VkTex(RGBA32F, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.materialId = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
-		this.thickness = new VkTex(this.thicknessFormat, w, h, VkTex.COLOR | VkTex.SAMPLED);
+		this.thickness = new VkTex(this.thicknessFormat, thicknessSize(w), thicknessSize(h), VkTex.COLOR | VkTex.SAMPLED);
 		this.foam = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.foamClear = false;
 	}
@@ -104,6 +106,11 @@ public final class WaterRenderer implements AutoCloseable {
 			}
 		}
 		this.sceneDepth = null;
+	}
+
+	/** The thickness target's side for a screen side: half of it, rounded up (THICKNESS_SCALE in the thickness shaders). */
+	private static int thicknessSize(int side) {
+		return Math.max(1, (side + 1) / 2);
 	}
 
 	public void prepare(int w, int h) {
@@ -119,8 +126,11 @@ public final class WaterRenderer implements AutoCloseable {
 		int h = this.height;
 		for (Body body : bodies) {
 			WaterRegion r = body.region();
-			r.mesher.build(cb, body.ubo(), r.currentParticles(), r.counters, WaterRegion.C_FLUID + r.cur, r.args, r.staticSolid, r.mesher.fineBox(r.box),
-				WaterSettings.sheetFill);
+			// The surface only changes when the particles did: a sleeping body keeps last frame's mesh.
+			if (r.takeFieldStale()) {
+				r.mesher.build(cb, body.ubo(), r.currentParticles(), r.counters, WaterRegion.C_FLUID + r.cur, r.args, r.staticSolid,
+					r.mesher.fineBox(r.box), WaterSettings.sheetFill, r.dropletIds, r.fluidCapacity);
+			}
 			r.recordViewProbe(cb, body.ubo(), view);
 		}
 
@@ -137,21 +147,21 @@ public final class WaterRenderer implements AutoCloseable {
 			this.meshFront.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, Desc.ssbo(r.gridVelocity()),
 				Desc.ssbo(r.iceCells()));
 			this.meshFront.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DRAW_ARGS_OFFSET);
-			this.dropletFront.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.mesher.densA), view);
+			this.dropletFront.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.dropletIds), view);
 			this.dropletFront.push(cb, Program.f(radius), Program.f(0.0F), Program.f(DROPLET_NEAR));
-			this.dropletFront.drawIndirect(cb, r.args, WaterRegion.ARGS_FLUID_DRAW);
+			this.dropletFront.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DROPLET_ARGS_OFFSET);
 		}
 		GraphicsProgram.end(cb);
 
-		GraphicsProgram.begin(cb, w, h, this.thickness.view, new float[]{0, 0, 0, 0}, 0L);
+		GraphicsProgram.begin(cb, thicknessSize(w), thicknessSize(h), this.thickness.view, new float[]{0, 0, 0, 0}, 0L);
 		for (Body body : bodies) {
 			WaterRegion r = body.region();
 			float radius = WaterSettings.particleRadius / r.res;
 			this.meshThickness.bind(cb, body.ubo(), Desc.ssbo(r.mesher.verts), Desc.ssbo(r.mesher.quads), view, depthTex);
 			this.meshThickness.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DRAW_ARGS_OFFSET);
-			this.dropletThickness.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.mesher.densA), view, depthTex);
+			this.dropletThickness.bind(cb, body.ubo(), Desc.ssbo(r.currentParticles()), Desc.ssbo(r.dropletIds), view, depthTex);
 			this.dropletThickness.push(cb, Program.f(radius), Program.f(0.0F), Program.f(DROPLET_NEAR));
-			this.dropletThickness.drawIndirect(cb, r.args, WaterRegion.ARGS_FLUID_DRAW);
+			this.dropletThickness.drawIndirect(cb, r.mesher.meshCounters, SurfaceMesher.DROPLET_ARGS_OFFSET);
 		}
 		GraphicsProgram.end(cb);
 		Vk.barrier(cb);

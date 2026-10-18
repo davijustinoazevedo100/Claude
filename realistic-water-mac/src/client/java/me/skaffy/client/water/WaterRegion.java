@@ -196,6 +196,8 @@ public final class WaterRegion implements AutoCloseable {
 	private @Nullable VkBuf mpmGrid;
 	private final VkBuf[] mpmState = new VkBuf[2];
 	@Nullable VkBuf surfaceParticles;
+	/** Indices of the particles drawn as droplets (see droplet_cull.comp), filled when the surface is rebuilt. */
+	VkBuf dropletIds;
 	PressureSolver solver;
 	SurfaceMesher mesher;
 	private boolean freshGrid;
@@ -239,10 +241,18 @@ public final class WaterRegion implements AutoCloseable {
 	private int lastAwake = -1;
 	private int lastAwakeFrame = -1;
 	private int wakeFrame;
+	/** Liquids: how many readbacks in a row found the fastest particle slower than STILL_SPEED, since which frame. */
+	private int stillFrames;
+	private int stillSince = -1;
+	/** A liquid whose fastest particle stays under this (blocks/s) for STILL_FRAMES readbacks is at rest and sleeps. */
+	static final float STILL_SPEED = 0.1F;
+	static final int STILL_FRAMES = 30;
 	private int @Nullable [] fieldBox;
 	private boolean fieldStale = true;
 	int lastWhitewaterCount;
 	float lastMaxSpeed;
+	/** Springs feed this region (it never sleeps then). */
+	boolean hasSources;
 	/** The latest block fill and flow read back (null until the first), and how many have come back. */
 	@Nullable Fill latestFill;
 	int fillCount;
@@ -265,6 +275,7 @@ public final class WaterRegion implements AutoCloseable {
 		if (material.isGranular()) {
 			this.surfaceParticles = VkBuf.device((long) this.fluidCapacity * SURFACE_PARTICLE_BYTES, 0);
 		}
+		this.dropletIds = VkBuf.device((long) this.fluidCapacity * 4, 0);
 		this.counters = VkBuf.device(COUNTER_BYTES, 0);
 		this.args = VkBuf.device(128, VkBuf.INDIRECT);
 		this.emitterRing = VkBuf.upload((long) Vk.FRAME_RING * MAX_EMITTERS_PER_FRAME * EMITTER_BYTES, VkBuf.STORAGE);
@@ -358,6 +369,13 @@ public final class WaterRegion implements AutoCloseable {
 			this.emittedSinceReadback = 0;
 			this.lastAwake = b.getInt(off + C_AWAKE * 4);
 			this.lastAwakeFrame = this.slotFrame[slot];
+			if (this.lastMaxSpeed < STILL_SPEED * this.res) {
+				if (this.stillFrames++ == 0) {
+					this.stillSince = this.slotFrame[slot];
+				}
+			} else {
+				this.stillFrames = 0;
+			}
 		}
 		this.slotHasAabb[slot] = false;
 		int shattered = b.getInt(off + C_SHATTER * 4);
@@ -671,6 +689,8 @@ public final class WaterRegion implements AutoCloseable {
 				Vk.destroyLater(this.surfaceParticles);
 				this.surfaceParticles = VkBuf.device((long) next * SURFACE_PARTICLE_BYTES, 0);
 			}
+			Vk.destroyLater(this.dropletIds);
+			this.dropletIds = VkBuf.device((long) next * 4, 0);
 			this.fluidCapacity = next;
 		}
 		long wwLimit = Math.min(Integer.MAX_VALUE / PARTICLE_BYTES, Vk.maxStorageBufferRange() / PARTICLE_BYTES);
@@ -748,14 +768,25 @@ public final class WaterRegion implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Nothing in the region is moving and nothing is about to change it, so it needs no steps (and its surface no rebuild)
+	 * until something wakes it: sand and slime when every particle has come to rest, liquids once their fastest particle
+	 * has stayed slower than STILL_SPEED for a while.
+	 */
 	boolean dormant() {
-		return this.material.usesMpm() && this.initialized && this.lastAwake == 0 && this.lastAwakeFrame > this.wakeFrame
-			&& this.pending.isEmpty() && this.removals.isEmpty() && this.absorbQueue.isEmpty() && this.pendingShift == null
-			&& !this.solidsFullUpload && this.solidPatches.isEmpty() && !this.freshGrid;
+		if (!this.initialized || !this.pending.isEmpty() || !this.removals.isEmpty() || !this.absorbQueue.isEmpty() || this.pendingShift != null
+			|| this.solidsFullUpload || !this.solidPatches.isEmpty() || this.freshGrid) {
+			return false;
+		}
+		if (this.material.usesMpm()) {
+			return this.lastAwake == 0 && this.lastAwakeFrame > this.wakeFrame;
+		}
+		return this.stillFrames >= STILL_FRAMES && this.stillSince >= this.wakeFrame;
 	}
 
 	void wake(int frame) {
 		this.wakeFrame = frame;
+		this.stillFrames = 0;
 	}
 
 	boolean takeFieldStale() {
@@ -777,7 +808,8 @@ public final class WaterRegion implements AutoCloseable {
 		ComputeProgram[] p = programs();
 		if (!this.pending.isEmpty() || numRemovals > 0 || !this.absorbQueue.isEmpty() || this.pendingShift != null || this.freshGrid
 			|| this.solidsFullUpload || !this.solidPatches.isEmpty()) {
-			this.wakeFrame = frame;
+			this.wake(frame);
+			this.fieldStale = true;
 		}
 		if (steps > 0) {
 			this.fieldStale = true;
@@ -1051,7 +1083,7 @@ public final class WaterRegion implements AutoCloseable {
 
 	private boolean pendingShiftHappened;
 
-	private static final int AIR_DIST_PASSES = 4;
+	private static final int AIR_DIST_PASSES = 2;
 	/** AIR_DIST_SEALED in common.glsl: the air distance meaning "sealed off", which every cell starts from. */
 	private static final int AIR_DIST_SEALED = 64;
 
@@ -1153,7 +1185,7 @@ public final class WaterRegion implements AutoCloseable {
 		this.releaseGrid();
 		for (AutoCloseable c : new AutoCloseable[]{
 			this.particles[0], this.particles[1], this.whitewater[0], this.whitewater[1], this.mpmState[0], this.mpmState[1], this.surfaceParticles,
-			this.counters,
+			this.dropletIds, this.counters,
 			this.args, this.emitterRing,
 			this.statsReadback, this.fillBuffer
 		}) {

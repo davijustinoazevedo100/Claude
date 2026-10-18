@@ -28,8 +28,6 @@ public final class Currents {
 	/** Dirt, grass, mud, clay: washed away only by a strong one. */
 	public static final int SOIL = 2;
 
-	private static @Nullable Set<Block> loose;
-	private static @Nullable Set<Block> soil;
 	private static boolean fallLookedUp;
 	private static @Nullable Method fall;
 	private static @Nullable Class<?> fallingBlock;
@@ -38,34 +36,34 @@ public final class Currents {
 	}
 
 	public static int kind(BlockState state) {
-		if (loose == null) {
-			Set<Block> l = new HashSet<>();
-			add(l, "SAND", "RED_SAND", "GRAVEL");
-			for (String color : new String[]{"WHITE", "ORANGE", "MAGENTA", "LIGHT_BLUE", "YELLOW", "LIME", "PINK", "GRAY", "LIGHT_GRAY", "CYAN",
-				"PURPLE", "BLUE", "BROWN", "GREEN", "RED", "BLACK"}) {
-				add(l, color + "_CONCRETE_POWDER");
-			}
-			Set<Block> s = new HashSet<>();
-			add(s, "DIRT", "COARSE_DIRT", "ROOTED_DIRT", "GRASS_BLOCK", "PODZOL", "MYCELIUM", "MUD", "CLAY");
-			soil = s;
-			loose = l;
-		}
 		if (state.isAir()) {
 			return NONE;
 		}
 		Block block = state.getBlock();
-		return loose.contains(block) ? LOOSE : soil != null && soil.contains(block) ? SOIL : NONE;
+		return Washable.LOOSE.contains(block) ? LOOSE : Washable.SOIL.contains(block) ? SOIL : NONE;
 	}
 
-	private static void add(Set<Block> set, String... names) {
-		for (String name : names) {
-			try {
-				if (Blocks.class.getField(name).get(null) instanceof Block b) {
-					set.add(b);
+	// Built on first use, once the blocks are registered; class initialization makes it safe for the client and server
+	// threads alike.
+	private static final class Washable {
+		static final Set<Block> LOOSE = blocks("SAND", "RED_SAND", "GRAVEL", "WHITE_CONCRETE_POWDER", "ORANGE_CONCRETE_POWDER",
+			"MAGENTA_CONCRETE_POWDER", "LIGHT_BLUE_CONCRETE_POWDER", "YELLOW_CONCRETE_POWDER", "LIME_CONCRETE_POWDER", "PINK_CONCRETE_POWDER",
+			"GRAY_CONCRETE_POWDER", "LIGHT_GRAY_CONCRETE_POWDER", "CYAN_CONCRETE_POWDER", "PURPLE_CONCRETE_POWDER", "BLUE_CONCRETE_POWDER",
+			"BROWN_CONCRETE_POWDER", "GREEN_CONCRETE_POWDER", "RED_CONCRETE_POWDER", "BLACK_CONCRETE_POWDER");
+		static final Set<Block> SOIL = blocks("DIRT", "COARSE_DIRT", "ROOTED_DIRT", "GRASS_BLOCK", "PODZOL", "MYCELIUM", "MUD", "CLAY");
+
+		private static Set<Block> blocks(String... names) {
+			Set<Block> set = new HashSet<>();
+			for (String name : names) {
+				try {
+					if (Blocks.class.getField(name).get(null) instanceof Block b) {
+						set.add(b);
+					}
+				} catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+					// Not in this version: it just isn't washed away.
 				}
-			} catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
-				// Not in this version: it just isn't washed away.
 			}
+			return Set.copyOf(set);
 		}
 	}
 

@@ -1,5 +1,9 @@
 #version 450
 #include "common.glsl"
+// The thickness target is THICKNESS_SCALE times smaller than the screen on each side.
+#ifndef THICKNESS_SCALE
+#define THICKNESS_SCALE 1.0
+#endif
 layout(binding = 4) uniform sampler2D sceneDepth;
 layout(location = 0) in vec2 vUV;
 layout(location = 1) in vec3 vCenter;
@@ -17,7 +21,7 @@ void main() {
     if (r2 > 1.0) {
         discard;
     }
-    vec2 uv = gl_FragCoord.xy * G.screen.zw;
+    vec2 uv = gl_FragCoord.xy * G.screen.zw * THICKNESS_SCALE;
     if (-vCenter.z > linearDepth(texture(sceneDepth, uv).r)) {
         discard;
     }

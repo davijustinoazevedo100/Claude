@@ -1090,7 +1090,9 @@ public final class WaterWorld {
 			if (fill != null) {
 				this.pendingFills.add(new Object[]{r, fill});
 			}
-			int[] box = r.computeBoxWorld(this.sourcesFor(r), this.frameCounter);
+			List<BlockPos> sources = this.sourcesFor(r);
+			r.hasSources = !sources.isEmpty();
+			int[] box = r.computeBoxWorld(sources, this.frameCounter);
 			r.boxWorld = box;
 			if (box == null) {
 				if (++r.idleFrames > 90) {
@@ -1139,16 +1141,20 @@ public final class WaterWorld {
 			steps = Mth.clamp(wanted, 1, clipDt != null ? WaterSettings.renderMaxStepsPerFrame : WaterSettings.maxStepsPerFrame);
 			stepDt = Math.min(frameDt / steps, WaterSettings.maxDt);
 		}
+		// Under load (the game slower than the frame budget) every body takes fewer steps per frame and runs a little slow-motion,
+		// instead of each slow frame asking for more steps and making the next one slower still.
+		float load = this.smoothedFrameMs / Math.max(WaterSettings.frameBudgetMs, 1.0F);
+		float stepScale = clipDt != null || load <= 1.0F ? 1.0F : Math.max(1.0F / load, 0.25F);
 		int sandSteps = 0;
 		float sandDt = frameDt;
 		int slimeSteps = 0;
 		float slimeDt = frameDt;
 		if (!this.paused && !mc.isPaused()) {
 			float limit = mpmDtLimit(Material.SAND, resolutionFor(Material.SAND), fastestSand);
-			sandSteps = Mth.clamp((int) Math.ceil(frameDt / limit), 1, clipDt != null ? Integer.MAX_VALUE : mpmMaxSteps(Material.SAND));
+			sandSteps = Mth.clamp((int) Math.ceil(frameDt / limit), 1, clipDt != null ? Integer.MAX_VALUE : scaled(mpmMaxSteps(Material.SAND), stepScale));
 			sandDt = Math.min(frameDt / sandSteps, limit);
 			limit = mpmDtLimit(Material.SLIME, resolutionFor(Material.SLIME), fastestSlime);
-			slimeSteps = Mth.clamp((int) Math.ceil(frameDt / limit), 1, clipDt != null ? Integer.MAX_VALUE : mpmMaxSteps(Material.SLIME));
+			slimeSteps = Mth.clamp((int) Math.ceil(frameDt / limit), 1, clipDt != null ? Integer.MAX_VALUE : scaled(mpmMaxSteps(Material.SLIME), stepScale));
 			slimeDt = Math.min(frameDt / slimeSteps, limit);
 		}
 		this.lastSteps = steps;
@@ -1195,13 +1201,30 @@ public final class WaterWorld {
 			r.planWindow(level, this.solids(r.material, r.res), r.boxWorld);
 			boolean mpm = r.material.usesMpm();
 			boolean slime = r.material == Material.SLIME;
-			if (mpm && entityNear(level, r)) {
+			// Still bodies sleep (no steps, no surface rebuild) until something can disturb them: a body or a piston coming
+			// near, a spring feeding them, or (water) ice or a snowy biome freezing them.
+			boolean freezing = r.material == Material.WATER && WaterSettings.freezing && (r.hasColdBlocks() || r.coldBiome);
+			if (r.hasSources || freezing || entityNear(level, r)) {
 				r.wake(this.frameCounter);
 			}
-			int regionSteps = !mpm ? steps : r.dormant() ? 0 : slime ? slimeSteps : sandSteps;
-			float regionDt = !mpm ? stepDt : slime ? slimeDt : sandDt;
+			boolean asleep = r.dormant();
+			int regionSteps;
+			float regionDt;
+			if (mpm) {
+				regionSteps = asleep ? 0 : slime ? slimeSteps : sandSteps;
+				regionDt = slime ? slimeDt : sandDt;
+			} else if (steps == 0 || asleep) {
+				regionSteps = 0;
+				regionDt = stepDt;
+			} else {
+				// Each liquid steps as often as its own flow needs: a slow lava pool doesn't pay for a fast waterfall elsewhere.
+				float speed = r.lastMaxSpeed / r.res + WaterSettings.gravity * 0.15F;
+				int wanted = Math.max((int) Math.ceil(frameDt * speed * r.res / WaterSettings.cfl), (int) Math.ceil(frameDt / WaterSettings.maxDt));
+				regionSteps = Mth.clamp(wanted, 1, clipDt != null ? WaterSettings.renderMaxStepsPerFrame : scaled(WaterSettings.maxStepsPerFrame, stepScale));
+				regionDt = Math.min(frameDt / regionSteps, WaterSettings.maxDt);
+			}
 			int interval = r.material == Material.WATER ? FLOW_INTERVAL : SYNC_INTERVAL;
-			if (readFill && r.initialized() && (this.frameCounter + r.id) % interval == 0) {
+			if (readFill && r.initialized() && !asleep && (this.frameCounter + r.id) % interval == 0) {
 				r.fillRequested = true;
 			}
 			int slot = Vk.ringSlot() * MAX_REGIONS + i;
@@ -1226,6 +1249,10 @@ public final class WaterWorld {
 		this.retire(level, merged, drained);
 		Vk.endFrame();
 		this.frameCounter++;
+	}
+
+	private static int scaled(int maxSteps, float scale) {
+		return Math.max(1, Math.round(maxSteps * scale));
 	}
 
 	private void retire(ClientLevel level, List<WaterRegion> merged, List<WaterRegion> drained) {

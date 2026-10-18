@@ -42,14 +42,14 @@ public final class ShaderPrecompiler {
 			"g2p", "ww_update", "inflow", "probe", "shift", "remove", "merge", "blockfill", "mpm_clear", "mpm_p2g", "mpm_grid", "mpm_g2p",
 			"mg_flags0", "mg_coarsen", "mg_smooth", "mg_restrict", "mg_prolong", "cg_init", "cg_apply", "cg_dot", "cg_reduce", "cg_update",
 			"cg_direction", "mg_coarse", "fine_clear", "blur", "nets_vertices", "nets_quads", "mesh_args", "sheet_fill", "zb_splat", "zb_field",
-			"grain_cull", "viscosity", "airdist"}) {
+			"grain_cull", "viscosity", "airdist", "droplet_cull"}) {
 			compute(name + ".comp");
 		}
 		compute("blockfill.comp", "MPM", "1");
 		graphics("mesh.vert", "mesh_front.frag");
 		graphics("particle.vert", "droplet_front.frag", "DROPLETS", "1", "VIEW_BINDING", "3");
-		graphics("mesh.vert", "mesh_thickness.frag");
-		graphics("particle.vert", "droplet_thickness.frag", "DROPLETS", "1", "VIEW_BINDING", "3");
+		graphics("mesh.vert", "mesh_thickness.frag", "THICKNESS_SCALE", "2.0");
+		graphics("particle.vert", "droplet_thickness.frag", "DROPLETS", "1", "VIEW_BINDING", "3", "THICKNESS_SCALE", "2.0");
 		graphics("particle.vert", "whitewater.frag", "VIEW_BINDING", "4");
 		graphics("fullscreen.vert", "composite.frag");
 		graphics("grain.vert", "grain.frag");

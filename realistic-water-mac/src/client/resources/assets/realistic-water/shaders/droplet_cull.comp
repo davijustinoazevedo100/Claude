@@ -1,0 +1,34 @@
+#version 450
+#include "common.glsl"
+layout(local_size_x = 256) in;
+layout(std430, binding = 1) readonly buffer Parts { Particle parts[]; };
+layout(std430, binding = 2) readonly buffer Counters { uint counters[]; };
+layout(std430, binding = 3) readonly buffer Dens { float dens[]; };
+layout(std430, binding = 4) buffer MeshCounters { uint meshCounters[]; };
+layout(std430, binding = 5) writeonly buffer Drops { uint drops[]; };
+layout(push_constant) uniform PC { ivec4 a; ivec4 b; } pc;
+
+// The particles drawn as droplets: those away from the surface mesh's bulk (spray, drips, thin trickles). Picked once
+// whenever the surface is rebuilt, so the droplet passes draw only these instead of testing every particle per vertex.
+void main() {
+    uint i = GID_U;
+    if (i >= min(counters[pc.a.x], uint(pc.a.y))) {
+        return;
+    }
+    Particle p = parts[i];
+    if (p.pos.w < 0.0) {
+        return;
+    }
+    ivec3 fp = ivec3(floor(p.pos.xyz * float(G.fine.w)));
+    float nearDens = 0.0;
+    for (int k = 0; k < 27; k++) {
+        ivec3 q = fp + ivec3(k % 3, (k / 3) % 3, k / 9) - 1;
+        if (inFine(q)) {
+            nearDens = max(nearDens, dens[fineIndex(q)]);
+        }
+    }
+    if (nearDens > G.surf.w) {
+        return;
+    }
+    drops[atomicAdd(meshCounters[8], 1u)] = i;
+}

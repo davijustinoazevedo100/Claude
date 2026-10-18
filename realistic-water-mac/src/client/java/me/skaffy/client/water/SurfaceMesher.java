@@ -9,6 +9,8 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 
 final class SurfaceMesher implements AutoCloseable {
 	static final long DRAW_ARGS_OFFSET = 16;
+	/** Indirect draw arguments of the droplet passes: one quad for each particle droplet_cull.comp picked. */
+	static final long DROPLET_ARGS_OFFSET = 48;
 
 	final int subdivision;
 	final int fx;
@@ -36,6 +38,7 @@ final class SurfaceMesher implements AutoCloseable {
 	private final ComputeProgram netsQuads;
 	private final ComputeProgram meshArgs;
 	private final ComputeProgram sheetFill;
+	private final ComputeProgram dropletCull;
 
 	SurfaceMesher(int nx, int ny, int nz, int subdivision) {
 		this.subdivision = subdivision;
@@ -67,7 +70,8 @@ final class SurfaceMesher implements AutoCloseable {
 				new ComputeProgram("mesh_args.comp", U, S),
 				new ComputeProgram("sheet_fill.comp", U, S, S, S),
 				new ComputeProgram("zb_splat.comp", U, S, S, S),
-				new ComputeProgram("zb_field.comp", U, S, S)
+				new ComputeProgram("zb_field.comp", U, S, S),
+				new ComputeProgram("droplet_cull.comp", U, S, S, S, S, S)
 			};
 		}
 		this.clear = shared[0];
@@ -78,6 +82,7 @@ final class SurfaceMesher implements AutoCloseable {
 		this.sheetFill = shared[5];
 		this.zbSplat = shared[6];
 		this.zbField = shared[7];
+		this.dropletCull = shared[8];
 	}
 
 	private static ComputeProgram[] shared;
@@ -119,8 +124,11 @@ final class SurfaceMesher implements AutoCloseable {
 	}
 
 	void build(VkCommandBuffer cb, Desc ubo, VkBuf particles, VkBuf counters, int counterIndex, VkBuf dispatchArgs, VkBuf staticSolid,
-		int[] fineBox, boolean fillSheets) {
+		int[] fineBox, boolean fillSheets, VkBuf droplets, int particleCapacity) {
 		this.buildField(cb, ubo, particles, counters, counterIndex, dispatchArgs, fineBox, fillSheets);
+		this.dropletCull.bind(cb, ubo, Desc.ssbo(particles), Desc.ssbo(counters), Desc.ssbo(this.densA), Desc.ssbo(this.meshCounters), Desc.ssbo(droplets));
+		this.dropletCull.push(cb, counterIndex, particleCapacity);
+		this.dropletCull.dispatchIndirect(cb, dispatchArgs, WaterRegion.ARGS_FLUID_DISPATCH);
 		int cubeGroups = ComputeProgram.groups(cubes(fineBox), 256);
 		this.netsVertices.bind(cb, ubo, Desc.ssbo(this.densA), Desc.ssbo(this.vertexId), Desc.ssbo(this.verts), Desc.ssbo(this.meshCounters),
 			Desc.ssbo(staticSolid));
@@ -132,7 +140,7 @@ final class SurfaceMesher implements AutoCloseable {
 		this.netsQuads.dispatch(cb, cubeGroups, 1, 1);
 		Vk.barrier(cb);
 		this.meshArgs.bind(cb, ubo, Desc.ssbo(this.meshCounters));
-		this.meshArgs.push(cb, 0, this.quadCapacity);
+		this.meshArgs.push(cb, 0, this.quadCapacity, particleCapacity);
 		this.meshArgs.dispatch(cb, 1, 1, 1);
 		Vk.barrier(cb);
 	}
