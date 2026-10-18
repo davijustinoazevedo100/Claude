@@ -23,6 +23,16 @@ public final class WaterCommands {
 
 	public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher, CommandBuildContext context) {
 		dispatcher.register(literal("water")
+			.then(literal("info").executes(c -> {
+				// What the game draws with and, when it is Vulkan, the GPU and code paths: the first thing to check when nothing shows up.
+				String os = System.getProperty("os.name") + " " + System.getProperty("os.version") + " (" + System.getProperty("os.arch") + ")";
+				if (me.skaffy.client.vk.Vk.tryDevice() != null) {
+					c.getSource().sendFeedback(Component.literal("Realistic Water is running on Vulkan: " + me.skaffy.client.vk.Vk.deviceInfo() + " | " + os));
+				} else {
+					c.getSource().sendFeedback(Component.literal(WaterWorld.noVulkanMessage() + " | " + os));
+				}
+				return 1;
+			}))
 			.then(literal("stats").executes(c -> {
 				c.getSource().sendFeedback(Component.literal(WaterWorld.get().statsLine()));
 				return 1;

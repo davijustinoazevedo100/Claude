@@ -320,15 +320,28 @@ public final class WaterWorld {
 		Minecraft mc = Minecraft.getInstance();
 		if (!this.warnedNoVulkan && mc.player != null) {
 			this.warnedNoVulkan = true;
-			String mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")
-				? " On macOS Vulkan runs through MoltenVK: if the game keeps going back to OpenGL, Minecraft's own Vulkan renderer can't start on "
-					+ "this Mac (see the game log), and macOS OpenGL has no compute shaders, so the simulation can't run there."
-				: "";
-			mc.player.sendSystemMessage(Component.literal(
-				"Realistic Water needs the Vulkan graphics API (Options > Video Settings > Graphics API > Vulkan, then restart). "
-					+ "Minecraft switches back to OpenGL by itself after a crash during startup." + mac));
+			mc.player.sendSystemMessage(Component.literal(noVulkanMessage()));
 		}
 		return false;
+	}
+
+	/** Why the simulation can't run: what Minecraft is actually drawing with, and what to do about it. */
+	public static String noVulkanMessage() {
+		boolean mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+		String api = Vk.graphicsApi();
+		StringBuilder sb = new StringBuilder("Realistic Water can't run: it needs Minecraft's Vulkan renderer, but Minecraft is drawing with ")
+			.append(api).append(" (").append(Vk.describeDevice()).append("). ");
+		if (api.equals("OpenGL")) {
+			sb.append("Set Options > Video Settings > Graphics API to Vulkan and restart the game. If it already says Vulkan, Minecraft's Vulkan "
+				+ "renderer failed to start and the game went back to OpenGL by itself; logs/latest.log says why (search for \"Vulkan\").");
+			if (mac) {
+				sb.append(" On a Mac, Vulkan runs through MoltenVK, which needs a Metal GPU that Minecraft's renderer supports; macOS OpenGL has no "
+					+ "compute shaders, so the simulation can't fall back to it.");
+			}
+		} else {
+			sb.append("Please report this together with logs/latest.log.");
+		}
+		return sb.append(" (/water info shows this again.)").toString();
 	}
 
 	// Simulation memory grows with resolution cubed and a splash easily needs over a gigabyte at the defaults, which
@@ -674,6 +687,10 @@ public final class WaterWorld {
 		}
 		this.pendingFills.clear();
 		this.ticks++;
+		// Say so right away (once) when the game isn't on Vulkan, instead of only when the first realistic block shows up.
+		if (this.ticks == 100 && mc.player != null) {
+			this.vulkanReady();
+		}
 		for (WaterRegion r : this.regions) {
 			this.tickIce(level, r);
 		}

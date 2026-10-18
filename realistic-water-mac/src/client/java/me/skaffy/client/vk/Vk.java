@@ -6,10 +6,16 @@ import com.mojang.renderpearl.backend.api.GpuDeviceBackend;
 import com.mojang.renderpearl.backend.vulkan.VulkanCommandEncoder;
 import com.mojang.renderpearl.backend.vulkan.VulkanDevice;
 import com.mojang.renderpearl.frontend.FrontendGpuDevice;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.LongBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import me.skaffy.RealisticWater;
 import me.skaffy.client.mixin.FrontendGpuDeviceAccessor;
 import org.jspecify.annotations.Nullable;
@@ -42,6 +48,9 @@ public final class Vk {
 	private static final int POOL_SETS = 512;
 
 	private static @Nullable VulkanDevice device;
+	private static long nextSearchNanos;
+	private static boolean loggedMissing;
+	private static String deviceInfo = "";
 	private static final List<VkTex> pendingTransitions = new ArrayList<>();
 	private static final ArrayDeque<Deferred> deferred = new ArrayDeque<>();
 	private static long frame;
@@ -66,15 +75,106 @@ public final class Vk {
 		if (device != null) {
 			return device;
 		}
-		GpuDevice gpu = RenderSystem.getDevice();
-		if (gpu instanceof FrontendGpuDevice frontend) {
-			GpuDeviceBackend backend = ((FrontendGpuDeviceAccessor) frontend).realisticWater$getBackend();
-			if (backend instanceof VulkanDevice vulkan) {
-				probe(vulkan.vkDevice());
-				device = vulkan;
-			}
+		long now = System.nanoTime();
+		if (now < nextSearchNanos) {
+			return null;
+		}
+		nextSearchNanos = now + 2_000_000_000L;
+		VulkanDevice vulkan = findVulkan(currentDevice());
+		if (vulkan != null) {
+			probe(vulkan.vkDevice());
+			device = vulkan;
+		} else if (!loggedMissing && currentDevice() != null) {
+			loggedMissing = true;
+			RealisticWater.LOGGER.warn("Realistic Water: no Vulkan device found, Minecraft is drawing with {} ({}, {} {})", graphicsApi(), describeDevice(),
+				System.getProperty("os.name"), System.getProperty("os.version"));
 		}
 		return device;
+	}
+
+	private static @Nullable Object currentDevice() {
+		try {
+			return RenderSystem.getDevice();
+		} catch (RuntimeException | LinkageError e) {
+			return null;
+		}
+	}
+
+	// Minecraft's device is normally a FrontendGpuDevice over its backend, but debug layers, compatibility shims or other
+	// mods can wrap either one. Look through a few layers of device-like fields before deciding there is no Vulkan.
+	private static @Nullable VulkanDevice findVulkan(@Nullable Object root) {
+		ArrayDeque<Object> queue = new ArrayDeque<>();
+		Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		if (root != null) {
+			queue.add(root);
+		}
+		while (!queue.isEmpty() && seen.size() < 64) {
+			Object o = queue.poll();
+			if (!seen.add(o)) {
+				continue;
+			}
+			if (o instanceof VulkanDevice vulkan) {
+				return vulkan;
+			}
+			if (o instanceof FrontendGpuDevice frontend) {
+				GpuDeviceBackend backend = ((FrontendGpuDeviceAccessor) frontend).realisticWater$getBackend();
+				if (backend != null) {
+					queue.add(backend);
+				}
+			}
+			for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+				for (Field field : c.getDeclaredFields()) {
+					Class<?> type = field.getType();
+					if (Modifier.isStatic(field.getModifiers()) || type.isPrimitive() || !deviceLike(type)) {
+						continue;
+					}
+					try {
+						field.setAccessible(true);
+						Object value = field.get(o);
+						if (value != null) {
+							queue.add(value);
+						}
+					} catch (ReflectiveOperationException | RuntimeException e) {
+						// Not ours to read; skip it.
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private static boolean deviceLike(Class<?> type) {
+		String name = type.getSimpleName();
+		return GpuDevice.class.isAssignableFrom(type) || GpuDeviceBackend.class.isAssignableFrom(type) || name.contains("Device")
+			|| name.contains("Backend");
+	}
+
+	/** Minecraft's graphics device and the backend under it, by class: what the game actually draws with. */
+	public static String describeDevice() {
+		Object gpu = currentDevice();
+		if (gpu == null) {
+			return "no graphics device yet";
+		}
+		StringBuilder sb = new StringBuilder(gpu.getClass().getName());
+		if (gpu instanceof FrontendGpuDevice frontend) {
+			GpuDeviceBackend backend = ((FrontendGpuDeviceAccessor) frontend).realisticWater$getBackend();
+			sb.append(" over ").append(backend == null ? "no backend" : backend.getClass().getName());
+		}
+		return sb.toString();
+	}
+
+	/** "Vulkan", "OpenGL" or "an unknown renderer", from the device classes. */
+	public static String graphicsApi() {
+		if (device != null) {
+			return "Vulkan";
+		}
+		String d = describeDevice().toLowerCase(Locale.ROOT);
+		return d.contains("vulkan") ? "Vulkan" : d.contains("opengl") || d.contains(".gl") || d.contains("gldevice") ? "OpenGL" : "an unknown renderer";
+	}
+
+	/** The GPU and the code paths in use, once a Vulkan device was found (empty before). */
+	public static String deviceInfo() {
+		return deviceInfo;
 	}
 
 	// Picks code paths from what the device Minecraft created actually enabled (MoltenVK on macOS differs from desktop drivers).
@@ -100,6 +200,9 @@ public final class Vk {
 			}
 			deviceLocalHeap = largest > 0L ? largest : Long.MAX_VALUE;
 			int api = props.apiVersion();
+			deviceInfo = String.format(Locale.ROOT, "%s, Vulkan %d.%d.%d, push descriptors %s, dynamic rendering %s, NaN-safe shaders %s, GPU heap %d MiB",
+				props.deviceNameString(), VK10.VK_VERSION_MAJOR(api), VK10.VK_VERSION_MINOR(api), VK10.VK_VERSION_PATCH(api),
+				pushDescriptors ? "yes" : "no", coreRendering ? "core" : khrRendering ? "KHR" : "MISSING", preserveNan ? "yes" : "no", largest >> 20);
 			RealisticWater.LOGGER.info(
 				"Realistic Water on {} (Vulkan {}.{}.{}, {}): push descriptors {}, dynamic rendering {}, NaN-safe shaders {}, max workgroup {}, "
 					+ "shared memory {} KiB, max storage buffer {} MiB, GPU heap {} MiB",

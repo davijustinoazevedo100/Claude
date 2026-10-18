@@ -68,8 +68,11 @@ mod's own simulation and shaders, with simple stand-in blocks instead of Minecra
 
 ### Troubleshooting
 
-On startup the log (`logs/latest.log`) gets a line starting with `Realistic Water on` that lists the GPU and
-the code paths in use. Two JVM flags exist for troubleshooting: `-Drealisticwater.noPushDescriptors=true`
+Type `/water info` in chat: it says whether Minecraft is really drawing with Vulkan (and on which GPU), or what it
+is using instead. On startup the log (`logs/latest.log`) gets a line starting with `Realistic Water on` that lists
+the GPU and the code paths in use, or `Realistic Water: no Vulkan device found` with what the game draws with. If
+the Graphics API option says Vulkan but the game draws with OpenGL, Minecraft's own Vulkan renderer failed to start
+and the game went back to OpenGL by itself; its reason is in the same log. Two JVM flags exist for troubleshooting: `-Drealisticwater.noPushDescriptors=true`
 forces descriptor sets, and `-Drealisticwater.fastMath=true` turns off the NaN-preserving shader variants.
 
 Building: `./gradlew build` as usual. After editing a shader, run `tools/precompile-shaders.sh` (Linux or
