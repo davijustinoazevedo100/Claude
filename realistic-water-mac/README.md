@@ -75,6 +75,10 @@ the Graphics API option says Vulkan but the game draws with OpenGL, Minecraft's 
 and the game went back to OpenGL by itself; its reason is in the same log. Two JVM flags exist for troubleshooting: `-Drealisticwater.noPushDescriptors=true`
 forces descriptor sets, and `-Drealisticwater.fastMath=true` turns off the NaN-preserving shader variants.
 
+Realistic blocks (slime, honey, sand, water, lava) are invisible blocks that the simulation draws. Blocks that loaded
+with the world before the Vulkan device could be found are picked up again as soon as it is (the log then says
+`Vulkan device found, scanning the loaded chunks again`); before, they stayed invisible until their chunk reloaded.
+
 Building: `./gradlew build` as usual. After editing a shader, run `tools/precompile-shaders.sh` (Linux or
 macOS, JDK 17+) to regenerate `src/client/resources/assets/realistic-water/shaders/spv`.
 

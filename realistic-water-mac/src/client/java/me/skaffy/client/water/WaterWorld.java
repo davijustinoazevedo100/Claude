@@ -311,6 +311,8 @@ public final class WaterWorld {
 
 	private boolean warnedNoVulkan;
 	private boolean tunedForGpu;
+	/** Realistic blocks turned up before Minecraft's Vulkan device could be found; the loaded chunks are scanned again once it can. */
+	private boolean missedBlocks;
 
 	private boolean vulkanReady() {
 		if (Vk.tryDevice() != null) {
@@ -401,7 +403,11 @@ public final class WaterWorld {
 	}
 
 	private void addMaterial(BlockPos pos, double y0, double y1, Material material) {
-		if (y1 <= y0 || !this.vulkanReady()) {
+		if (y1 <= y0) {
+			return;
+		}
+		if (!this.vulkanReady()) {
+			this.missedBlocks = true;
 			return;
 		}
 		WaterRegion r = this.regionFor(pos, material);
@@ -430,7 +436,11 @@ public final class WaterWorld {
 
 	private void addSource(BlockPos pos, Material material) {
 		BlockPos p = pos.immutable();
-		if (this.sources.containsKey(p) || !this.vulkanReady()) {
+		if (this.sources.containsKey(p)) {
+			return;
+		}
+		if (!this.vulkanReady()) {
+			this.missedBlocks = true;
 			return;
 		}
 		if (this.sources.size() >= MAX_SOURCES) {
@@ -661,6 +671,13 @@ public final class WaterWorld {
 			this.builtLavaResolution = WaterSettings.lavaResolution;
 			this.builtSlimeResolution = WaterSettings.slimeResolution;
 			this.builtHoneyResolution = WaterSettings.honeyResolution;
+			this.reload(level);
+		}
+		// Slime, water and the rest that loaded with the world while the device wasn't there yet would otherwise stay invisible
+		// blocks until the chunk reloads.
+		if (this.missedBlocks && Vk.tryDevice() != null) {
+			this.missedBlocks = false;
+			RealisticWater.LOGGER.info("Realistic Water: Vulkan device found, scanning the loaded chunks again");
 			this.reload(level);
 		}
 		for (int i = 0; i < 4 && !this.chunkScanQueue.isEmpty(); i++) {
@@ -1415,6 +1432,7 @@ public final class WaterWorld {
 		this.sources.clear();
 		this.chunkScanQueue.clear();
 		this.failed = false;
+		this.missedBlocks = false;
 	}
 
 	public void shutdown() {
