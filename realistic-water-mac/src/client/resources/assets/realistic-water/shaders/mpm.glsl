@@ -16,7 +16,11 @@
 #define SLIME_DAMPING G.matD.x
 #define SLIME_GRIP G.matD.y
 #define SLIME_CEILING_HOLD G.matD.z
+// While a dispenser in this region squeezes slime out: how fast it comes out (cells/s), else 0.
+#define SLIME_OOZE_SPEED G.matD.w
 #define BOUNCY_SOLID 2u
+// A dispenser: slime slides off it instead of gluing itself to it, so what a dispenser squeezes out comes away.
+#define SMOOTH_SOLID 4u
 
 const float MASS_FP = 1048576.0;
 const float MOM_FP = 131072.0;

@@ -62,6 +62,9 @@ public final class WaterCommands {
 			.then(literal("honey")
 				.executes(c -> ball(c, 1, Material.HONEY))
 				.then(argument("size", IntegerArgumentType.integer(1, 8)).executes(c -> ball(c, IntegerArgumentType.getInteger(c, "size"), Material.HONEY))))
+			.then(literal("mud")
+				.executes(c -> ball(c, 1, Material.MUD))
+				.then(argument("size", IntegerArgumentType.integer(1, 8)).executes(c -> ball(c, IntegerArgumentType.getInteger(c, "size"), Material.MUD))))
 			.then(literal("remove")
 				.executes(c -> {
 					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.WATER);
@@ -86,6 +89,11 @@ public final class WaterCommands {
 				.then(literal("honey").executes(c -> {
 					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.HONEY);
 					c.getSource().sendFeedback(Component.literal("Removing all realistic honey around you"));
+					return 1;
+				}))
+				.then(literal("mud").executes(c -> {
+					WaterWorld.get().removeAll(Minecraft.getInstance().options.renderDistance().get() + 2, Material.MUD);
+					c.getSource().sendFeedback(Component.literal("Removing all realistic mud around you"));
 					return 1;
 				})))
 			.then(literal("set")
@@ -119,6 +127,7 @@ public final class WaterCommands {
 			case LAVA -> "lava";
 			case SLIME -> "slime";
 			case HONEY -> "honey";
+			case MUD -> "mud";
 			default -> "water";
 		};
 		c.getSource().sendFeedback(Component.literal("Dropped a " + size + "^3 block cube of " + name));

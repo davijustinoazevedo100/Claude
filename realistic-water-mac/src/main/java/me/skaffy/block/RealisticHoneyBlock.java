@@ -1,8 +1,11 @@
 package me.skaffy.block;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
@@ -10,6 +13,7 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.level.pathfinder.PathComputationType;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -60,6 +64,19 @@ public class RealisticHoneyBlock extends Block {
 	@Override
 	protected boolean isPathfindable(final BlockState state, final PathComputationType type) {
 		return true;
+	}
+
+	@Override
+	protected void entityInside(final BlockState state, final Level level, final BlockPos pos, final Entity entity, final InsideBlockEffectApplier effectApplier,
+		final boolean initial) {
+		// Honey is sticky: whoever wades into it is slowed right down and sinks only slowly.
+		if (entity.getY() < pos.getY() + state.getValue(LAYERS) / (double) MAX_LAYERS) {
+			try {
+				entity.makeStuckInBlock(state, new Vec3(0.45, 0.35, 0.45));
+			} catch (LinkageError ignored) {
+				// A renamed method only loses the drag.
+			}
+		}
 	}
 
 	@Override

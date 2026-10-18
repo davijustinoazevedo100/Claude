@@ -22,7 +22,7 @@ public final class WaterSettings {
 	public static float maxSpeed = 40.0F;
 	public static float gravity = 9.81F;
 
-	public static boolean whitewater = true;
+	public static boolean whitewater = false;
 	public static float wwTrappedAirRate = 30.0F;
 	public static float wwWaveCrestRate = 45.0F;
 	public static float wwEnergyMin = 1.0F;
@@ -151,6 +151,7 @@ public final class WaterSettings {
 	public static float slimeFloorFriction = 0.6F;
 	public static float slimeGrip = 12.0F;
 	public static float slimeCeilingHold = 3.0F;
+	public static float slimeTrampoline = 1.0F;
 	public static float slimeCfl = 0.4F;
 	public static int slimeMaxStepsPerFrame = 12;
 	public static float slimeMaxSpeed = 30.0F;
@@ -188,6 +189,32 @@ public final class WaterSettings {
 	public static float honeySurfaceSmoothing = 0.7F;
 	public static float honeyRoughness = 0.05F;
 	public static float honeySpecular = 6.0F;
+
+	public static int mudResolution = 6;
+	public static float mudFlipRatio = 0.9F;
+	public static float mudMaxSpeed = 8.0F;
+	public static float mudViscosity = 0.6F;
+	public static int mudViscositySweeps = 12;
+	public static float mudYieldStress = 2.0F;
+	public static float mudMaxViscosity = 30.0F;
+	public static float mudFilmFriction = 200.0F;
+	public static float mudStrandedTime = 10.0F;
+	public static int mudStrandedNeighbors = 16;
+	public static float mudFilmDepth = 0.12F;
+	public static float mudRefraction = 0.02F;
+	public static float mudAbsorbR = 6.0F;
+	public static float mudAbsorbG = 7.0F;
+	public static float mudAbsorbB = 8.0F;
+	public static float mudScatterR = 0.31F;
+	public static float mudScatterG = 0.23F;
+	public static float mudScatterB = 0.15F;
+	public static float mudScatterDensity = 14.0F;
+	public static float mudSurfaceSmoothing = 0.5F;
+	public static float mudRoughness = 0.16F;
+	public static float mudSpecular = 3.5F;
+
+	public static float oozeSpeed = 1.3F;
+	public static float oozeWidth = 0.75F;
 
 	public static String ffmpeg = "";
 	public static boolean renderFreezeWorld = true;

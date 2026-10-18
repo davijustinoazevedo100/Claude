@@ -13,6 +13,11 @@ bool solid(ivec3 c) {
     return solidKind(c) != 0u;
 }
 
+// Whether slime glues itself to a solid of this kind: anything but bouncy blocks and dispensers.
+bool grips(uint kind) {
+    return kind != 0u && kind != BOUNCY_SOLID && kind != SMOOTH_SOLID;
+}
+
 vec3 slide(vec3 v, vec3 n) {
     float vn = dot(v, n);
     if (vn >= 0.0) {
@@ -45,6 +50,7 @@ vec3 slimeContact(ivec3 c, vec3 v) {
     bool wall = false;
     bool bouncy = own == BOUNCY_SOLID;
     vec3 n = vec3(0.0);
+    vec3 mouth = vec3(0.0);
     for (int a = 0; a < 3; a++) {
         ivec3 e = axisVec(a);
         uint lo = solidKind(c - e);
@@ -53,16 +59,27 @@ vec3 slimeContact(ivec3 c, vec3 v) {
             n[a] += (hi == 0u ? 1.0 : 0.0) - (lo == 0u ? 1.0 : 0.0);
         } else {
             n[a] += (lo != 0u ? 1.0 : 0.0) - (hi != 0u ? 1.0 : 0.0);
-            wall = wall || (a != 1 && ((lo != 0u && lo != BOUNCY_SOLID) || (hi != 0u && hi != BOUNCY_SOLID)));
+            wall = wall || (a != 1 && (grips(lo) || grips(hi)));
+            if (a != 1) {
+                mouth[a] += (lo == SMOOTH_SOLID ? 1.0 : 0.0) - (hi == SMOOTH_SOLID ? 1.0 : 0.0);
+            }
         }
         bouncy = bouncy || lo == BOUNCY_SOLID || hi == BOUNCY_SOLID;
+    }
+    if (!wall && dot(mouth, mouth) > 1e-6) {
+        // In front of a dispenser's mouth: what it squeezes out moves straight out, no faster than it is pushed (so each new
+        // bit joins the last one), and hangs from the mouth meanwhile instead of sliding down its face; once the
+        // dispenser is done it comes away whole when it has bent far enough to pull itself off.
+        mouth = normalize(mouth);
+        float outward = max(dot(v, mouth), 0.0);
+        return (SLIME_OOZE_SPEED > 0.0 ? min(outward, SLIME_OOZE_SPEED) : outward) * mouth;
     }
     if (own != 0u) {
         // Inside a block: it faces the way the open cells around it are.
         if (dot(n, n) < 1e-6) {
             return vec3(0.0);
         }
-        wall = own != BOUNCY_SOLID && max(abs(n.x), abs(n.z)) > abs(n.y);
+        wall = grips(own) && max(abs(n.x), abs(n.z)) > abs(n.y);
     }
     if (wall) {
         return vec3(0.0);

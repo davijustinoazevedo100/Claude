@@ -1,6 +1,7 @@
 package me.skaffy.mixin;
 
 import me.skaffy.block.RealisticHoneyBlock;
+import me.skaffy.block.RealisticMudBlock;
 import me.skaffy.block.RealisticSandBlock;
 import me.skaffy.block.RealisticSlimeBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
@@ -14,6 +15,6 @@ public class PistonBaseBlockMixin {
 	@Redirect(method = "isPushable", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/state/BlockState;isAir()Z"))
 	private static boolean realisticWater$sandIsAir(BlockState state) {
 		return state.isAir() || state.getBlock() instanceof RealisticSandBlock || state.getBlock() instanceof RealisticSlimeBlock
-			|| state.getBlock() instanceof RealisticHoneyBlock;
+			|| state.getBlock() instanceof RealisticHoneyBlock || state.getBlock() instanceof RealisticMudBlock;
 	}
 }

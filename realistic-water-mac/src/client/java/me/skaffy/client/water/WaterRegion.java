@@ -41,6 +41,8 @@ public final class WaterRegion implements AutoCloseable {
 	static final int MAX_REMOVE = 16;
 	private static final int INITIAL_PARTICLES = 262_144;
 	private static final int INITIAL_WHITEWATER = 262_144;
+	/** Whitewater (foam) is off by default and only water makes it: a token buffer, grown if it gets switched on. */
+	private static final int MIN_WHITEWATER = 4096;
 
 	/** A box of new particles; loose honey starts out running instead of holding the shape of the block it was placed as. */
 	public record Emitter(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, float vx, float vy, float vz, boolean loose) {
@@ -186,7 +188,7 @@ public final class WaterRegion implements AutoCloseable {
 	private final List<int[]> solidPatches = new ArrayList<>();
 
 	int fluidCapacity = INITIAL_PARTICLES;
-	int wwCapacity = INITIAL_WHITEWATER;
+	int wwCapacity;
 	VkBuf[] particles = new VkBuf[2];
 	VkBuf[] whitewater = new VkBuf[2];
 	int cur;
@@ -225,12 +227,15 @@ public final class WaterRegion implements AutoCloseable {
 	private boolean fieldStale = true;
 	int lastWhitewaterCount;
 	float lastMaxSpeed;
+	/** How fast a dispenser is squeezing material into this region this frame (blocks/s), 0 when none is. */
+	float oozeSpeed;
 	private int emittedSinceReadback;
 
 	WaterRegion(int id, int res, Material material) {
 		this.id = id;
 		this.res = res;
 		this.material = material;
+		this.wwCapacity = material.usesWhitewater() && WaterSettings.whitewater ? INITIAL_WHITEWATER : MIN_WHITEWATER;
 		for (int i = 0; i < 2; i++) {
 			this.particles[i] = VkBuf.device((long) this.fluidCapacity * PARTICLE_BYTES, 0);
 			this.whitewater[i] = VkBuf.device((long) this.wwCapacity * PARTICLE_BYTES, 0);
@@ -1032,6 +1037,9 @@ public final class WaterRegion implements AutoCloseable {
 	private int viscositySweeps() {
 		if (this.material == Material.HONEY) {
 			return WaterSettings.honeyViscosity > 0.0F ? Math.max(0, WaterSettings.honeyViscositySweeps) : 0;
+		}
+		if (this.material == Material.MUD) {
+			return WaterSettings.mudViscosity > 0.0F || WaterSettings.mudYieldStress > 0.0F ? Math.max(0, WaterSettings.mudViscositySweeps) : 0;
 		}
 		return this.material == Material.LAVA && WaterSettings.lavaViscosity > 0.0F ? Math.max(0, WaterSettings.lavaViscositySweeps) : 0;
 	}

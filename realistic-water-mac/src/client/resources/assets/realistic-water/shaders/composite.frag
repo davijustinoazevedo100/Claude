@@ -310,6 +310,34 @@ vec3 shadeAboveHoney(vec2 uv, vec3 n, float fd, float ambient) {
     return transmitted + scattered + edge + gelReflection(P, V, n, footprint, 0.9) + sunSpecular(n, V, footprint) * 1.2;
 }
 
+// Mud: an opaque brown paste, lumpy and gritty, with wetter darker patches that shine; thin smears let the ground show
+// through, darkened as if soaked.
+vec3 shadeAboveMud(vec2 uv, vec3 n, float fd, float ambient) {
+    vec3 P = viewPosAt(uv, fd);
+    vec3 V = normalize(-P);
+    n = dot(n, V) < 0.0 ? -n : n;
+    float footprint = pixelFootprint(fd);
+    vec3 W = G.misc.yzw + (G.invView * vec4(P, 0.0)).xyz;
+    vec3 nW = normalize(mat3(G.invView) * n);
+    vec3 an = abs(nW);
+    vec2 q = an.y > max(an.x, an.z) ? W.xz : (an.x > an.z ? W.zy : W.xy);
+    float detail = smoothstep(0.7, 2.5, 0.05 / max(footprint, 1e-5));
+    float fine = smoothstep(0.7, 2.5, 0.015 / max(footprint, 1e-5));
+    vec3 lump = valueNoise(q * 2.7) * 0.45 + valueNoise(q * 7.0 + 17.3) * 0.35 * detail + valueNoise(q * 19.0 + 41.1) * 0.2 * fine;
+    vec3 grit = valueNoise(q * 46.0 + 3.1);
+    float wet = smoothstep(0.45, 0.7, valueNoise(q * 0.8 + 5.7).x);
+    n = normalize(mat3(G.view) * normalize(nW + (0.32 - 0.12 * wet) * vec3(lump.y, 0.0, lump.z)));
+
+    float path = max(texture(thicknessTex, uv).r, 0.0) * G.waterA.y;
+    float cover = 1.0 - exp(-G.scatter.w * path);
+    vec3 soaked = texture(sceneColor, uv).rgb * 0.45;
+    vec3 L = normalize(G.sunDir.xyz);
+    float light = 0.32 * ambient + 0.12 + 0.8 * clamp(dot(n, L), 0.0, 1.0) * G.sunDir.w;
+    float shade = mix(0.85, 1.12, lump.x) * mix(1.0, 0.78, wet) * mix(1.0, mix(0.82, 1.1, grit.x), fine);
+    vec3 paste = mix(soaked, G.scatter.rgb * shade * light, cover);
+    return paste + gelReflection(P, V, n, footprint, 0.06 + 0.3 * wet) + sunSpecular(n, V, footprint) * (0.15 + 0.85 * wet);
+}
+
 vec3 shadeAboveWater(vec2 uv, vec3 n, float fd, float sceneDist, float ambient) {
     vec3 P = viewPosAt(uv, fd);
     vec3 V = normalize(-P);
@@ -469,12 +497,13 @@ void main() {
     bool lavaPass = abs(pc.filterMat - 2.0) < 0.5;
     bool slimePass = abs(pc.filterMat - 3.0) < 0.5;
     bool honeyPass = abs(pc.filterMat - 4.0) < 0.5;
-    bool waterPass = !lavaPass && !slimePass && !honeyPass;
+    bool mudPass = abs(pc.filterMat - 5.0) < 0.5;
+    bool waterPass = !lavaPass && !slimePass && !honeyPass && !mudPass;
     vec4 foam = waterPass ? texture(foamTex, uv) : vec4(0.0);
     float sceneDev = texture(sceneDepth, uv).r;
     float sceneDist = linearDepth(sceneDev);
     bool hasFluid = fd > 0.0 && fd < sceneDist;
-    bool underwater = viewState.x > 0.5 && !slimePass && !honeyPass;
+    bool underwater = viewState.x > 0.5 && !slimePass && !honeyPass && !mudPass;
     bool matTagged = matId >= -0.5;
     bool icy = waterPass && hasFluid && matTagged && abs(matId - ICE_MAT) < 0.08;
     if (hasFluid && matTagged) {
@@ -506,6 +535,7 @@ void main() {
         color = lavaPass ? shadeAboveLava(uv, g.xyz, fd, ambient, mat.gba)
             : slimePass ? shadeAboveSlime(uv, g.xyz, fd, ambient)
             : honeyPass ? shadeAboveHoney(uv, g.xyz, fd, ambient)
+            : mudPass ? shadeAboveMud(uv, g.xyz, fd, ambient)
             : icy ? shadeAboveIce(uv, g.xyz, fd, ambient) : shadeAboveWater(uv, g.xyz, fd, sceneDist, ambient);
         vec4 clip = G.proj * vec4(viewPosAt(uv, fd), 1.0);
         outDepth = clip.z / clip.w;

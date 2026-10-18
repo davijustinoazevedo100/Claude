@@ -1,13 +1,15 @@
 package me.skaffy.client.water;
 
 import me.skaffy.net.SyncMaterial;
+import org.jspecify.annotations.Nullable;
 
 public enum Material {
 	WATER,
 	SAND,
 	LAVA,
 	SLIME,
-	HONEY;
+	HONEY,
+	MUD;
 
 	float shaderId() {
 		return switch (this) {
@@ -15,6 +17,7 @@ public enum Material {
 			case LAVA -> 2.0F;
 			case SLIME -> 3.0F;
 			case HONEY -> 4.0F;
+			case MUD -> 5.0F;
 			default -> 0.0F;
 		};
 	}
@@ -29,16 +32,25 @@ public enum Material {
 	}
 
 	boolean isFluidSim() {
-		return this == WATER || this == LAVA || this == HONEY;
+		return this == WATER || this == LAVA || this == HONEY || this == MUD;
 	}
 
 	/** Kept in the world as layered blocks (eighths of a block) rather than fluid levels. */
 	boolean usesLayers() {
-		return this == SAND || this == SLIME || this == HONEY;
+		return this == SAND || this == SLIME || this == HONEY || this == MUD;
 	}
 
 	boolean usesWhitewater() {
 		return this == WATER;
+	}
+
+	static @Nullable Material fromSyncId(byte id) {
+		for (Material m : values()) {
+			if (m.syncId() == id) {
+				return m;
+			}
+		}
+		return null;
 	}
 
 	byte syncId() {
@@ -47,6 +59,7 @@ public enum Material {
 			case LAVA -> SyncMaterial.LAVA;
 			case SLIME -> SyncMaterial.SLIME;
 			case HONEY -> SyncMaterial.HONEY;
+			case MUD -> SyncMaterial.MUD;
 			default -> SyncMaterial.WATER;
 		};
 	}

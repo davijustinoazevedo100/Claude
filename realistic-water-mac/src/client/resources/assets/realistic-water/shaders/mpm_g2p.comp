@@ -26,7 +26,7 @@ bool sticky(ivec3 c) {
         return false;
     }
     uint s = staticSolid[cellIndex(c)];
-    return s != 0u && s != BOUNCY_SOLID;
+    return s != 0u && s != BOUNCY_SOLID && s != SMOOTH_SOLID;
 }
 
 // Direction away from the walls within reach of a particle (zero if none): slime glues itself to them.

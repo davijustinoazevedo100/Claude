@@ -22,7 +22,7 @@ final class FlowSounds {
 	private int tick;
 
 	void onFill(Material material, WaterRegion.Fill f, Vec3 listener) {
-		if (material == Material.SLIME || material == Material.HONEY) {
+		if (material == Material.SLIME || material == Material.HONEY || material == Material.MUD) {
 			return;
 		}
 		boolean water = material == Material.WATER;
@@ -115,6 +115,18 @@ final class FlowSounds {
 			level.playLocalSound(p.x(), p.y(), p.z(), p.sound(), source, p.volume(), p.pitch(), false);
 			return true;
 		});
+	}
+
+	/** The squelch of slime, honey or mud being squeezed out of a dispenser: the block's own place sound. */
+	void squelch(ClientLevel level, Material material, double x, double y, double z) {
+		String name = material == Material.SLIME ? "SLIME_BLOCK" : material == Material.HONEY ? "HONEY_BLOCK" : "MUD";
+		try {
+			if (SoundType.class.getField(name).get(null) instanceof SoundType type) {
+				level.playLocalSound(x, y, z, type.getPlaceSound(), SoundSource.BLOCKS, 0.8F, 0.75F + this.random.nextFloat() * 0.2F, false);
+			}
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+			// Cosmetic only.
+		}
 	}
 
 	void clear() {

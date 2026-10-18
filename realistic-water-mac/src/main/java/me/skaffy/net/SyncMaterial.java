@@ -9,6 +9,7 @@ public final class SyncMaterial {
 	public static final byte LAVA = 2;
 	public static final byte SLIME = 3;
 	public static final byte HONEY = 4;
+	public static final byte MUD = 5;
 
 	private SyncMaterial() {
 	}
@@ -19,6 +20,7 @@ public final class SyncMaterial {
 			case LAVA -> ModContent.REALISTIC_LAVA_BLOCK;
 			case SLIME -> ModContent.REALISTIC_SLIME;
 			case HONEY -> ModContent.REALISTIC_HONEY;
+			case MUD -> ModContent.REALISTIC_MUD;
 			default -> ModContent.REALISTIC_WATER_BLOCK;
 		};
 	}
@@ -29,6 +31,7 @@ public final class SyncMaterial {
 			case LAVA -> "lava";
 			case SLIME -> "slime";
 			case HONEY -> "honey";
+			case MUD -> "mud";
 			default -> "water";
 		};
 	}

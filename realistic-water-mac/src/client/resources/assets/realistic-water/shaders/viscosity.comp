@@ -21,6 +21,25 @@ uint typeAt(ivec3 c) {
     return inBox(c) ? (cellFlags[cellIndex(c)] & 0xFFu) : CELL_AIR;
 }
 
+// How fast the flow shears around face i (1/s, cell units), from the velocities before the solve: the neighbours along
+// each axis that carry liquid or a wall, central differences.
+float strainRate(int comp, ivec3 f, int i) {
+    float s = 0.0;
+    for (int b = 0; b < 3; b++) {
+        ivec3 e = axisVec(b);
+        float up = velOld[i];
+        float dn = velOld[i];
+        if (faceInBox(comp, f + e) && kind[faceIndex(comp, f + e)] != FACE_AIR) {
+            up = velOld[faceIndex(comp, f + e)];
+        }
+        if (faceInBox(comp, f - e) && kind[faceIndex(comp, f - e)] != FACE_AIR) {
+            dn = velOld[faceIndex(comp, f - e)];
+        }
+        s += 0.25 * (up - dn) * (up - dn);
+    }
+    return sqrt(s);
+}
+
 void main() {
     int comp;
     ivec3 f;
@@ -51,6 +70,11 @@ void main() {
         }
     }
     float alpha = G.matC.x;
+    if (G.matC.y > 0.0) {
+        // A yield stress (mud): where the paste hardly shears it stiffens (regularized Bingham, yield / strain rate, capped),
+        // so a heap slumps and then holds its shape instead of thinning out into a film.
+        alpha = min(alpha + G.matC.y / max(strainRate(comp, f, i), 0.05), max(G.matC.z, alpha));
+    }
     float u0 = velOld[i] + G.gravityDt[comp] * DT;
     vel[i] = (u0 + alpha * sum) / (1.0 + alpha * n);
 }

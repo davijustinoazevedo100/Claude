@@ -199,6 +199,18 @@ bool nearEntity(vec3 x) {
     return false;
 }
 
+// Honey and mud cling to whatever moves through them: within reach of a body they take on some of its motion each
+// step, so it drags them along and draws out strands as it leaves.
+vec3 cling(vec3 x, vec3 v, float strength) {
+    float reach = 0.3 * G.camGrid.w;
+    for (int e = 0; e < numEntities(); e++) {
+        if (all(greaterThanEqual(x, entMin(e) - reach)) && all(lessThanEqual(x, entMax(e) + reach))) {
+            v = mix(v, entVel(e), strength);
+        }
+    }
+    return v;
+}
+
 // Liquid freezes when ice (an ice block or water that froze already) touches it, and in a cold biome from its surface.
 bool freezes(vec3 x) {
     if (!FREEZING || !isWater()) {
@@ -264,6 +276,11 @@ bool advance(uint i, out vec3 xn, out vec3 v, out float tag, out bool gridded, o
         dx = DT * sampleVel(x + 0.5 * DT * uNew);
         if (!waterFilm(x, v, dx, tag)) {
             return false;
+        }
+        if (isHoney() || isMud()) {
+            vec3 held = cling(x, v, isHoney() ? 0.3 : 0.15);
+            dx += (held - v) * DT;
+            v = held;
         }
     } else {
         v += G.gravityDt.xyz * DT;

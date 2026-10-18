@@ -4,12 +4,14 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.renderpearl.backend.vulkan.VulkanGpuTexture;
 import com.mojang.renderpearl.backend.vulkan.VulkanGpuTextureView;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
+import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -17,6 +19,7 @@ import java.util.Map;
 import me.skaffy.ModContent;
 import me.skaffy.RealisticWater;
 import me.skaffy.block.RealisticHoneyBlock;
+import me.skaffy.block.RealisticMudBlock;
 import me.skaffy.block.RealisticSandBlock;
 import me.skaffy.block.RealisticSlimeBlock;
 import me.skaffy.client.vk.Desc;
@@ -26,6 +29,7 @@ import me.skaffy.block.RealisticWaterBlock;
 import me.skaffy.fluid.RealisticLavaFluid;
 import me.skaffy.fluid.RealisticWaterFluid;
 import me.skaffy.net.HoneySyncPayload;
+import me.skaffy.net.MudSyncPayload;
 import me.skaffy.net.LavaSyncPayload;
 import me.skaffy.net.RemoveAllWaterPayload;
 import me.skaffy.net.SandSyncPayload;
@@ -126,6 +130,7 @@ public final class WaterWorld {
 	private final Echoes lavaEchoes = new Echoes();
 	private final Echoes slimeEchoes = new Echoes();
 	private final Echoes honeyEchoes = new Echoes();
+	private final Echoes mudEchoes = new Echoes();
 	private final List<Object[]> pendingFills = new ArrayList<>();
 	private final FlowSounds sounds = new FlowSounds();
 	private @Nullable SolidCache solids;
@@ -151,6 +156,7 @@ public final class WaterWorld {
 	private int builtLavaResolution = WaterSettings.lavaResolution;
 	private int builtSlimeResolution = WaterSettings.slimeResolution;
 	private int builtHoneyResolution = WaterSettings.honeyResolution;
+	private int builtMudResolution = WaterSettings.mudResolution;
 	private int lastSandSteps;
 	private float lastSandDt;
 
@@ -178,6 +184,7 @@ public final class WaterWorld {
 			case LAVA -> lavaAmount(state);
 			case SLIME -> RealisticSlimeBlock.layers(state);
 			case HONEY -> RealisticHoneyBlock.layers(state);
+			case MUD -> RealisticMudBlock.layers(state);
 			default -> waterAmount(state);
 		};
 	}
@@ -201,6 +208,7 @@ public final class WaterWorld {
 			case LAVA -> this.lavaEchoes;
 			case SLIME -> this.slimeEchoes;
 			case HONEY -> this.honeyEchoes;
+			case MUD -> this.mudEchoes;
 			default -> this.waterEchoes;
 		};
 	}
@@ -246,6 +254,9 @@ public final class WaterWorld {
 		if (material == Material.HONEY) {
 			return Math.max(1, WaterSettings.honeyResolution);
 		}
+		if (material == Material.MUD) {
+			return Math.max(1, WaterSettings.mudResolution);
+		}
 		return Math.max(1, WaterSettings.resolution);
 	}
 
@@ -254,6 +265,7 @@ public final class WaterWorld {
 			case LAVA -> WaterSettings.lavaMaxSpeed;
 			case SLIME -> WaterSettings.slimeMaxSpeed;
 			case HONEY -> WaterSettings.honeyMaxSpeed;
+			case MUD -> WaterSettings.mudMaxSpeed;
 			default -> WaterSettings.maxSpeed;
 		};
 	}
@@ -298,6 +310,96 @@ public final class WaterWorld {
 			}
 		}
 		return null;
+	}
+
+	/** Dents being pressed into slime by bodies that just landed on it, and each body's vertical speed last tick (by id). */
+	private final List<SlimePress> presses = new ArrayList<>();
+	private Int2FloatOpenHashMap fallSpeeds = new Int2FloatOpenHashMap();
+
+	// A body that was falling onto Realistic Slime and stopped or bounced since the last tick landed on it: it presses a dent.
+	private void detectSlimeLandings(ClientLevel level) {
+		Int2FloatOpenHashMap speeds = new Int2FloatOpenHashMap();
+		if (WaterSettings.slimeTrampoline > 0.0F) {
+			for (WaterRegion r : this.regions) {
+				if (r.material != Material.SLIME || !r.hasWindow) {
+					continue;
+				}
+				AABB window = new AABB(r.ox, r.oy, r.oz, r.ox + r.sx, r.oy + r.sy, r.oz + r.sz).inflate(1.0);
+				for (Entity e : level.getEntities((Entity) null, window)) {
+					if (e.isSpectator() || speeds.containsKey(e.getId())) {
+						continue;
+					}
+					float vy = (float) ((e.getY() - e.yo) * 20.0);
+					float before = this.fallSpeeds.getOrDefault(e.getId(), 0.0F);
+					speeds.put(e.getId(), vy);
+					if (before > -SlimePress.minSpeed() || vy < before * 0.5F) {
+						continue;
+					}
+					BlockPos below = BlockPos.containing(e.getX(), e.getY() - 0.3, e.getZ());
+					int layers = RealisticSlimeBlock.layers(level.getBlockState(below));
+					if (layers > 0) {
+						AABB b = e.getBoundingBox();
+						this.presses.add(new SlimePress(b.minX, b.minZ, b.maxX, b.maxZ, below.getY() + layers / 8.0, -before));
+					}
+				}
+			}
+		}
+		this.fallSpeeds = speeds;
+	}
+
+	private static final int OOZE_WAIT_FRAMES = 240;
+	private final List<Ooze> oozes = new ArrayList<>();
+
+	/** A dispenser is about to place this block: when it shows up, let it ooze out of the dispenser instead. */
+	public void expectOoze(BlockPos pos, Direction out, byte syncMaterial) {
+		Material material = Material.fromSyncId(syncMaterial);
+		if (out == null || material == null || !material.usesLayers()) {
+			return;
+		}
+		this.oozes.removeIf(o -> o.pos.equals(pos));
+		this.oozes.add(new Ooze(pos.immutable(), out, material, this.frameCounter + OOZE_WAIT_FRAMES));
+	}
+
+	private boolean startOoze(ClientLevel level, BlockPos pos, Material material, int before, int after) {
+		for (Ooze o : this.oozes) {
+			if (o.started() || o.material != material || !o.pos.equals(pos)) {
+				continue;
+			}
+			if (!this.vulkanReady()) {
+				this.missedBlocks = true;
+				return true;
+			}
+			o.start((after - before) / 8.0F);
+			this.regionFor(pos, material).owned.add(pos.asLong());
+			this.sounds.squelch(level, material, pos.getX() + 0.5 - o.out.getStepX() * 0.5, pos.getY() + 0.5 - o.out.getStepY() * 0.5,
+				pos.getZ() + 0.5 - o.out.getStepZ() * 0.5);
+			return true;
+		}
+		return false;
+	}
+
+	private void advanceOozes(float dt) {
+		for (WaterRegion r : this.regions) {
+			r.oozeSpeed = 0.0F;
+		}
+		for (Iterator<Ooze> it = this.oozes.iterator(); it.hasNext(); ) {
+			Ooze o = it.next();
+			if (!o.started()) {
+				if (this.frameCounter > o.expires) {
+					it.remove();
+				}
+				continue;
+			}
+			WaterRegion region = this.regionFor(o.pos, o.material);
+			region.oozeSpeed = Math.max(region.oozeSpeed, Ooze.speed());
+			WaterRegion.Emitter slab = o.advance(dt);
+			if (slab != null) {
+				region.addEmitter(slab);
+			}
+			if (o.done()) {
+				it.remove();
+			}
+		}
 	}
 
 	private WaterRegion regionFor(BlockPos pos, Material material) {
@@ -369,10 +471,14 @@ public final class WaterWorld {
 		if (WaterSettings.honeyResolution == 6) {
 			WaterSettings.honeyResolution = 4;
 		}
+		if (WaterSettings.mudResolution == 6) {
+			WaterSettings.mudResolution = 4;
+		}
 		this.builtResolution = WaterSettings.resolution;
 		this.builtSandResolution = WaterSettings.sandResolution;
 		this.builtLavaResolution = WaterSettings.lavaResolution;
 		this.builtHoneyResolution = WaterSettings.honeyResolution;
+		this.builtMudResolution = WaterSettings.mudResolution;
 		RealisticWater.LOGGER.info("Realistic Water: {} MiB GPU heap, using resolution {} / sand {} / lava {}", heap >> 20, WaterSettings.resolution,
 			WaterSettings.sandResolution, WaterSettings.lavaResolution);
 		Minecraft mc = Minecraft.getInstance();
@@ -400,6 +506,10 @@ public final class WaterWorld {
 
 	public void addHoney(BlockPos pos, double y0, double y1) {
 		this.addMaterial(pos, y0, y1, Material.HONEY);
+	}
+
+	public void addMud(BlockPos pos, double y0, double y1) {
+		this.addMaterial(pos, y0, y1, Material.MUD);
 	}
 
 	private void addMaterial(BlockPos pos, double y0, double y1, Material material) {
@@ -487,6 +597,7 @@ public final class WaterWorld {
 		this.lavaEchoes.clear();
 		this.slimeEchoes.clear();
 		this.honeyEchoes.clear();
+		this.mudEchoes.clear();
 		this.pendingFills.clear();
 		this.sounds.clear();
 	}
@@ -539,7 +650,9 @@ public final class WaterWorld {
 		int slimeAfter = RealisticSlimeBlock.layers(newState);
 		if (slimeBefore != slimeAfter && !this.slimeEchoes.consume(key, slimeAfter)) {
 			if (slimeAfter > slimeBefore) {
-				this.addSlime(pos.immutable(), slimeBefore / 8.0, slimeAfter / 8.0);
+				if (!this.startOoze(level, pos, Material.SLIME, slimeBefore, slimeAfter)) {
+					this.addSlime(pos.immutable(), slimeBefore / 8.0, slimeAfter / 8.0);
+				}
 			} else if (newState.isAir()) {
 				this.removeMaterial(pos.immutable(), 0.0, 1.0, Material.SLIME);
 			}
@@ -549,9 +662,23 @@ public final class WaterWorld {
 		int honeyAfter = RealisticHoneyBlock.layers(newState);
 		if (honeyBefore != honeyAfter && !this.honeyEchoes.consume(key, honeyAfter)) {
 			if (honeyAfter > honeyBefore) {
-				this.addHoney(pos.immutable(), honeyBefore / 8.0, honeyAfter / 8.0);
+				if (!this.startOoze(level, pos, Material.HONEY, honeyBefore, honeyAfter)) {
+					this.addHoney(pos.immutable(), honeyBefore / 8.0, honeyAfter / 8.0);
+				}
 			} else if (newState.isAir()) {
 				this.removeMaterial(pos.immutable(), 0.0, 1.0, Material.HONEY);
+			}
+		}
+
+		int mudBefore = RealisticMudBlock.layers(oldState);
+		int mudAfter = RealisticMudBlock.layers(newState);
+		if (mudBefore != mudAfter && !this.mudEchoes.consume(key, mudAfter)) {
+			if (mudAfter > mudBefore) {
+				if (!this.startOoze(level, pos, Material.MUD, mudBefore, mudAfter)) {
+					this.addMud(pos.immutable(), mudBefore / 8.0, mudAfter / 8.0);
+				}
+			} else if (newState.isAir()) {
+				this.removeMaterial(pos.immutable(), 0.0, 1.0, Material.MUD);
 			}
 		}
 
@@ -616,7 +743,8 @@ public final class WaterWorld {
 					|| state.getBlock() == ModContent.REALISTIC_LAVA_BLOCK
 					|| state.getBlock() == ModContent.REALISTIC_SAND
 					|| state.getBlock() == ModContent.REALISTIC_SLIME
-					|| state.getBlock() == ModContent.REALISTIC_HONEY)) {
+					|| state.getBlock() == ModContent.REALISTIC_HONEY
+					|| state.getBlock() == ModContent.REALISTIC_MUD)) {
 				continue;
 			}
 			int baseY = (level.getMinSectionY() + s) << 4;
@@ -627,7 +755,8 @@ public final class WaterWorld {
 				int sand = RealisticSandBlock.layers(state);
 				int slime = RealisticSlimeBlock.layers(state);
 				int honey = RealisticHoneyBlock.layers(state);
-				if (water == 0 && lava == 0 && sand == 0 && slime == 0 && honey == 0) {
+				int mud = RealisticMudBlock.layers(state);
+				if (water == 0 && lava == 0 && sand == 0 && slime == 0 && honey == 0 && mud == 0) {
 					continue;
 				}
 				pos.set((chunkPos.x() << 4) + (i & 15), baseY + ((i >> 4) & 15), (chunkPos.z() << 4) + (i >> 8));
@@ -652,6 +781,9 @@ public final class WaterWorld {
 				if (honey > 0 && !this.owned(key, Material.HONEY)) {
 					this.addHoney(pos.immutable(), 0.0, honey / 8.0);
 				}
+				if (mud > 0 && !this.owned(key, Material.MUD)) {
+					this.addMud(pos.immutable(), 0.0, mud / 8.0);
+				}
 			}
 		}
 	}
@@ -665,12 +797,14 @@ public final class WaterWorld {
 			|| WaterSettings.sandResolution != this.builtSandResolution
 			|| WaterSettings.lavaResolution != this.builtLavaResolution
 			|| WaterSettings.slimeResolution != this.builtSlimeResolution
-			|| WaterSettings.honeyResolution != this.builtHoneyResolution) {
+			|| WaterSettings.honeyResolution != this.builtHoneyResolution
+			|| WaterSettings.mudResolution != this.builtMudResolution) {
 			this.builtResolution = WaterSettings.resolution;
 			this.builtSandResolution = WaterSettings.sandResolution;
 			this.builtLavaResolution = WaterSettings.lavaResolution;
 			this.builtSlimeResolution = WaterSettings.slimeResolution;
 			this.builtHoneyResolution = WaterSettings.honeyResolution;
+			this.builtMudResolution = WaterSettings.mudResolution;
 			this.reload(level);
 		}
 		// Slime, water and the rest that loaded with the world while the device wasn't there yet would otherwise stay invisible
@@ -683,11 +817,13 @@ public final class WaterWorld {
 		for (int i = 0; i < 4 && !this.chunkScanQueue.isEmpty(); i++) {
 			this.scanChunk(level, this.chunkScanQueue.poll());
 		}
+		this.detectSlimeLandings(level);
 		this.waterEchoes.expire(this.frameCounter);
 		this.sandEchoes.expire(this.frameCounter);
 		this.lavaEchoes.expire(this.frameCounter);
 		this.slimeEchoes.expire(this.frameCounter);
 		this.honeyEchoes.expire(this.frameCounter);
+		this.mudEchoes.expire(this.frameCounter);
 		Vec3 listener = mc.player != null ? mc.player.getEyePosition() : null;
 		for (Object[] f : this.pendingFills) {
 			WaterRegion r = (WaterRegion) f[0];
@@ -841,6 +977,7 @@ public final class WaterWorld {
 			case LAVA -> LavaSyncPayload.TYPE;
 			case SLIME -> SlimeSyncPayload.TYPE;
 			case HONEY -> HoneySyncPayload.TYPE;
+			case MUD -> MudSyncPayload.TYPE;
 			default -> WaterSyncPayload.TYPE;
 		};
 		if (!ClientPlayNetworking.canSend(type)) {
@@ -851,6 +988,7 @@ public final class WaterWorld {
 			case LAVA -> LavaSyncPayload.MAX_ENTRIES;
 			case SLIME -> SlimeSyncPayload.MAX_ENTRIES;
 			case HONEY -> HoneySyncPayload.MAX_ENTRIES;
+			case MUD -> MudSyncPayload.MAX_ENTRIES;
 			default -> WaterSyncPayload.MAX_ENTRIES;
 		};
 		for (int start = 0; start < positions.size(); start += max) {
@@ -866,6 +1004,7 @@ public final class WaterWorld {
 				case LAVA -> new LavaSyncPayload(p, a);
 				case SLIME -> new SlimeSyncPayload(p, a);
 				case HONEY -> new HoneySyncPayload(p, a);
+				case MUD -> new MudSyncPayload(p, a);
 				default -> new WaterSyncPayload(p, a);
 			};
 			ClientPlayNetworking.send(payload);
@@ -918,6 +1057,13 @@ public final class WaterWorld {
 			: this.lastFrameNanos == 0L ? 1.0F / 60.0F : (float) Math.min((now - this.lastFrameNanos) / 1.0e9, 0.1);
 		this.lastFrameNanos = now;
 		this.smoothedFrameMs = this.smoothedFrameMs * 0.9F + frameDt * 1000.0F * 0.1F;
+		if (!this.paused && !mc.isPaused()) {
+			this.advanceOozes(frameDt);
+			for (SlimePress press : this.presses) {
+				press.advance(frameDt);
+			}
+			this.presses.removeIf(SlimePress::done);
+		}
 		LevelRenderState levelState = mc.gameRenderer.gameRenderState().levelRenderState;
 		Vec3 cam = levelState.cameraRenderState.pos;
 		double reach = (mc.options.renderDistance().get() + 2) * 16.0;
@@ -1124,7 +1270,8 @@ public final class WaterWorld {
 		putInts(b, o + 48, r.material.usesWhitewater() && WaterSettings.whitewater ? 1 : 0, sourceCount, fluid && this.localPlayerFirst ? 1 : 0,
 			WaterSettings.wwCellLimit);
 		putFloats(b, o + 64, 0.0F, -WaterSettings.gravity * res, 0.0F, dt);
-		float flipRatio = lava ? WaterSettings.lavaFlipRatio : r.material == Material.HONEY ? WaterSettings.honeyFlipRatio : WaterSettings.flipRatio;
+		float flipRatio = lava ? WaterSettings.lavaFlipRatio : r.material == Material.HONEY ? WaterSettings.honeyFlipRatio
+			: r.material == Material.MUD ? WaterSettings.mudFlipRatio : WaterSettings.flipRatio;
 		float flip = (float) Math.pow(flipRatio, dt * 60.0F);
 		putFloats(b, o + 80, flip, PARTICLES_PER_CELL, WaterSettings.volumeCorrection, 0.0F);
 		putFloats(b, o + 96, maxSpeed(r.material) * res, h, this.simTime, 0.0F);
@@ -1177,6 +1324,9 @@ public final class WaterWorld {
 		}
 		putFloats(b, o + 3792, (float) (level.getMinY() - r.oy) * res - 8.0F, WaterRegion.KILL_MARGIN, 0.0F, 0.0F);
 		writeMaterialGlobals(b, o, r.material, res, dt);
+		if (r.material == Material.SLIME) {
+			b.putFloat(o + 3900, r.oozeSpeed * res);
+		}
 		writeIceGlobals(b, o, r.material, r.hasColdBlocks() || r.coldBiome, r.coldBiome, res, dt);
 		this.uboRing.flush(o, UBO_SIZE);
 		return sourceCount;
@@ -1188,10 +1338,12 @@ public final class WaterWorld {
 		boolean lava = material == Material.LAVA;
 		boolean slime = material == Material.SLIME;
 		boolean honey = material == Material.HONEY;
+		boolean mud = material == Material.MUD;
 		float refraction = lava ? WaterSettings.lavaRefraction : slime ? WaterSettings.slimeRefraction : honey ? WaterSettings.honeyRefraction
-			: WaterSettings.refraction;
+			: mud ? WaterSettings.mudRefraction : WaterSettings.refraction;
 		float surfaceSmooth = sand ? WaterSettings.sandSurfaceSmoothing : lava ? WaterSettings.lavaSurfaceSmoothing
-			: slime ? WaterSettings.slimeSurfaceSmoothing : honey ? WaterSettings.honeySurfaceSmoothing : WaterSettings.surfaceSmoothing;
+			: slime ? WaterSettings.slimeSurfaceSmoothing : honey ? WaterSettings.honeySurfaceSmoothing
+			: mud ? WaterSettings.mudSurfaceSmoothing : WaterSettings.surfaceSmoothing;
 		putFloats(b, o + 512, WaterSettings.particleRadius / res, WaterSettings.thicknessScale, refraction, surfaceSmooth);
 		if (honey) {
 			putFloats(b, o + 528, WaterSettings.honeyAbsorbR, WaterSettings.honeyAbsorbG, WaterSettings.honeyAbsorbB, 0.0F);
@@ -1199,6 +1351,9 @@ public final class WaterWorld {
 		} else if (lava) {
 			putFloats(b, o + 528, WaterSettings.lavaAbsorbR, WaterSettings.lavaAbsorbG, WaterSettings.lavaAbsorbB, 0.0F);
 			putFloats(b, o + 544, WaterSettings.lavaScatterR, WaterSettings.lavaScatterG, WaterSettings.lavaScatterB, WaterSettings.lavaScatterDensity);
+		} else if (mud) {
+			putFloats(b, o + 528, WaterSettings.mudAbsorbR, WaterSettings.mudAbsorbG, WaterSettings.mudAbsorbB, 0.0F);
+			putFloats(b, o + 544, WaterSettings.mudScatterR, WaterSettings.mudScatterG, WaterSettings.mudScatterB, WaterSettings.mudScatterDensity);
 		} else if (slime) {
 			putFloats(b, o + 528, WaterSettings.slimeAbsorbR, WaterSettings.slimeAbsorbG, WaterSettings.slimeAbsorbB, 0.0F);
 			putFloats(b, o + 544, WaterSettings.slimeScatterR, WaterSettings.slimeScatterG, WaterSettings.slimeScatterB, WaterSettings.slimeScatterDensity);
@@ -1207,19 +1362,20 @@ public final class WaterWorld {
 			putFloats(b, o + 544, WaterSettings.scatterR, WaterSettings.scatterG, WaterSettings.scatterB, WaterSettings.scatterDensity);
 		}
 		putFloats(b, o + 560, WaterSettings.wwRadius, WaterSettings.foamCoverage, WaterSettings.bubbleAlpha, WaterSettings.sprayAlpha);
-		float detailStrength = lava ? WaterSettings.lavaDetailStrength : slime || honey ? 0.0F : WaterSettings.detailStrength;
+		float detailStrength = lava ? WaterSettings.lavaDetailStrength : slime || honey || mud ? 0.0F : WaterSettings.detailStrength;
 		float roughness = lava ? WaterSettings.lavaRoughness : slime ? WaterSettings.slimeRoughness : honey ? WaterSettings.honeyRoughness
-			: WaterSettings.roughness;
+			: mud ? WaterSettings.mudRoughness : WaterSettings.roughness;
 		float specular = lava ? WaterSettings.lavaSpecular : slime ? WaterSettings.slimeSpecular : honey ? WaterSettings.honeySpecular
-			: WaterSettings.specular;
+			: mud ? WaterSettings.mudSpecular : WaterSettings.specular;
 		putFloats(b, o + 3808, detailStrength, WaterSettings.detailScale, WaterSettings.detailSpeed, roughness);
 		putFloats(b, o + 3824, specular, WaterSettings.wetDarkening, WaterSettings.filmShading, WaterSettings.foamBubbleSize);
 	}
 
-	/** The material block of the globals (matA..matE): the solver constants that differ between water, lava, sand, slime and honey. */
+	/** The material block of the globals (matA..matE): the solver constants that differ between the materials. */
 	static void writeMaterialGlobals(ByteBuffer b, int o, Material material, int res, float dt) {
 		boolean lava = material == Material.LAVA;
 		boolean honey = material == Material.HONEY;
+		boolean mud = material == Material.MUD;
 		if (material == Material.SLIME) {
 			// Elastic jelly: fixed-corotated stiffness, Kelvin-Voigt damping (scaled like the stiffness: particle density
 			// times blocks^2/s in cell units), and the restitution used against bouncy blocks such as anvils.
@@ -1248,16 +1404,24 @@ public final class WaterWorld {
 			float impactViscosity = WaterSettings.sandImpactDamping * 0.25F / Math.max(dt, 1e-5F);
 			putFloats(b, o + 3872, WaterSettings.sandWallFriction, 1.0F / PARTICLES_PER_CELL, impactViscosity, WaterSettings.sandImpactRate);
 		} else {
-			float filmFriction = lava ? WaterSettings.lavaFilmFriction : honey ? WaterSettings.honeyFilmFriction : WaterSettings.filmFriction;
-			float strandedTime = lava ? WaterSettings.lavaStrandedTime : honey ? WaterSettings.honeyStrandedTime : WaterSettings.strandedTime;
+			float filmFriction = lava ? WaterSettings.lavaFilmFriction : honey ? WaterSettings.honeyFilmFriction
+				: mud ? WaterSettings.mudFilmFriction : WaterSettings.filmFriction;
+			float strandedTime = lava ? WaterSettings.lavaStrandedTime : honey ? WaterSettings.honeyStrandedTime
+				: mud ? WaterSettings.mudStrandedTime : WaterSettings.strandedTime;
 			int strandedNeighbors = lava ? WaterSettings.lavaStrandedNeighbors : honey ? WaterSettings.honeyStrandedNeighbors
-				: WaterSettings.strandedNeighbors;
-			float filmDepth = (lava ? WaterSettings.lavaFilmDepth : honey ? WaterSettings.honeyFilmDepth : WaterSettings.filmDepth) * res;
+				: mud ? WaterSettings.mudStrandedNeighbors : WaterSettings.strandedNeighbors;
+			float filmDepth = (lava ? WaterSettings.lavaFilmDepth : honey ? WaterSettings.honeyFilmDepth : mud ? WaterSettings.mudFilmDepth
+				: WaterSettings.filmDepth) * res;
 			// Viscosity in cell units per step (blocks^2/s scaled to cells^2/s, times dt): the implicit solve's alpha.
-			float viscosity = Math.max(lava ? WaterSettings.lavaViscosity : honey ? WaterSettings.honeyViscosity : 0.0F, 0.0F) * res * res * dt;
+			float nu = lava ? WaterSettings.lavaViscosity : honey ? WaterSettings.honeyViscosity : mud ? WaterSettings.mudViscosity : 0.0F;
+			float viscosity = Math.max(nu, 0.0F) * res * res * dt;
+			// Mud is a Bingham paste: where it barely shears its yield stress adds viscosity (yield / strain rate, same units),
+			// up to a cap, so a heap stops spreading instead of thinning out into a film.
+			float yield = mud ? Math.max(WaterSettings.mudYieldStress, 0.0F) * res * res * dt : 0.0F;
+			float maxViscosity = mud ? Math.max(WaterSettings.mudMaxViscosity, nu) * res * res * dt : viscosity;
 			putFloats(b, o + 3840, material.shaderId(), 0.0F, 0.0F, 1.0F);
 			putFloats(b, o + 3856, filmFriction, strandedTime, strandedNeighbors, filmDepth);
-			putFloats(b, o + 3872, viscosity, 0.0F, 0.0F, 0.0F);
+			putFloats(b, o + 3872, viscosity, yield, maxViscosity, 0.0F);
 		}
 		putFloats(b, o + 3888, WaterSettings.sandGrainMinPixels, WaterSettings.sandBrightness, WaterSettings.sandGrainSpread, 0.0F);
 		float impactLogJ = (float) Math.log(Math.max(1.0F - WaterSettings.sandImpactCompression, 0.01F));
@@ -1349,6 +1513,22 @@ public final class WaterWorld {
 			putFloats(b, base + 32, d.getStepX() * speed, d.getStepY() * speed, d.getStepZ() * speed, 0.0F);
 			n++;
 		}
+		if (r.material == Material.SLIME) {
+			for (SlimePress press : this.presses) {
+				if (n >= MAX_ENTITIES) {
+					break;
+				}
+				double[] p = press.box();
+				if (!window.intersects(p[0], p[1], p[2], p[3], p[4], p[5])) {
+					continue;
+				}
+				int base = o + n * 48;
+				putFloats(b, base, (float) (p[0] - r.ox) * res, (float) (p[1] - r.oy) * res, (float) (p[2] - r.oz) * res, 0.0F);
+				putFloats(b, base + 16, (float) (p[3] - r.ox) * res, (float) (p[4] - r.oy) * res, (float) (p[5] - r.oz) * res, 0.0F);
+				putFloats(b, base + 32, (float) p[6] * res, (float) p[7] * res, (float) p[8] * res, 0.0F);
+				n++;
+			}
+		}
 		return n;
 	}
 
@@ -1381,7 +1561,7 @@ public final class WaterWorld {
 
 	public String statsLine() {
 		if (this.regions.isEmpty()) {
-			return "Nothing simulated right now (place a Realistic Water Bucket, Realistic Sand, Slime or Honey, or use /fill)";
+			return "Nothing simulated right now (place a Realistic Water Bucket, Realistic Sand, Slime, Honey or Mud, or use /fill)";
 		}
 		int fluid = 0;
 		int lavaFluid = 0;
@@ -1394,6 +1574,8 @@ public final class WaterWorld {
 		int piles = 0;
 		int jellies = 0;
 		int honeyBodies = 0;
+		int mud = 0;
+		int mudBodies = 0;
 		long cells = 0;
 		long windowCells = 0;
 		for (WaterRegion r : this.regions) {
@@ -1409,6 +1591,9 @@ public final class WaterWorld {
 			} else if (r.material == Material.HONEY) {
 				honey += r.lastFluidCount;
 				honeyBodies++;
+			} else if (r.material == Material.MUD) {
+				mud += r.lastFluidCount;
+				mudBodies++;
 			} else {
 				fluid += r.lastFluidCount;
 				bodies++;
@@ -1420,9 +1605,9 @@ public final class WaterWorld {
 			windowCells += r.numCells;
 		}
 		return String.format("%d water bodies  fluid %,d  whitewater %,d  |  %d lava bodies  lava fluid %,d  |  %d sand bodies  sand particles %,d  |  "
-				+ "%d slimes  slime particles %,d  |  %d honey bodies  honey particles %,d  |  "
+				+ "%d slimes  slime particles %,d  |  %d honey bodies  honey particles %,d  |  %d mud bodies  mud particles %,d  |  "
 				+ "active %,d cells of %,d allocated  |  frame %.1f ms  water steps %d x %.1f ms  sand steps %d x %.2f ms  sources %d  %s",
-			bodies, fluid, ww, lavaBodies, lavaFluid, piles, sand, jellies, slime, honeyBodies, honey, cells, windowCells, this.smoothedFrameMs, this.lastSteps,
+			bodies, fluid, ww, lavaBodies, lavaFluid, piles, sand, jellies, slime, honeyBodies, honey, mudBodies, mud, cells, windowCells, this.smoothedFrameMs, this.lastSteps,
 			this.lastDt * 1000.0F,
 			this.lastSandSteps, this.lastSandDt * 1000.0F, this.sources.size(), isHost() ? "(syncing blocks)" : "(not host: blocks follow the server)");
 	}
@@ -1433,6 +1618,9 @@ public final class WaterWorld {
 		this.chunkScanQueue.clear();
 		this.failed = false;
 		this.missedBlocks = false;
+		this.oozes.clear();
+		this.presses.clear();
+		this.fallSpeeds.clear();
 	}
 
 	public void shutdown() {

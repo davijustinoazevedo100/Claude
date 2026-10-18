@@ -80,6 +80,10 @@ bool isHoney() {
     return abs(G.matA.x - 4.0) < 0.5;
 }
 
+bool isMud() {
+    return abs(G.matA.x - 5.0) < 0.5;
+}
+
 // Liquids whose particles can hold still (flagged in vel.w, their cells solid): water when it freezes, and honey until
 // something disturbs it.
 bool canSet() {

@@ -23,13 +23,19 @@ final class SolidCache {
 	static final byte EMPTY = 0;
 	static final byte FULL = 1;
 	static final byte PARTIAL = 2;
-	/** Cell values in the uploaded grid: any non-zero value is solid; slime bounces off bouncy ones, water freezes on cold ones. */
+	/**
+	 * Cell values in the uploaded grid: any non-zero value is solid; slime bounces off bouncy ones, water freezes on cold
+	 * ones, and slime slides off smooth ones (dispensers) instead of sticking.
+	 */
 	static final int BOUNCY_SOLID = 2;
 	static final int COLD_SOLID = 3;
+	static final int SMOOTH_SOLID = 4;
 	private static final byte TAG_BOUNCY = 1;
 	private static final byte TAG_COLD = 2;
+	private static final byte TAG_SMOOTH = 3;
 	private static final Set<Block> BOUNCY = blocks("ANVIL", "CHIPPED_ANVIL", "DAMAGED_ANVIL");
 	private static final Set<Block> COLD = blocks("ICE", "PACKED_ICE", "BLUE_ICE", "FROSTED_ICE");
+	private static final Set<Block> SMOOTH = blocks("DISPENSER");
 
 	final int res;
 	/** The block the simulated material itself is kept in: it is the material, not an obstacle (the slime block is solid). */
@@ -132,7 +138,7 @@ final class SolidCache {
 	private void voxelizeBlock(ClientLevel level, BlockPos pos, BlockState state, Section s, int i) {
 		s.partial[i] = null;
 		Block block = state.isAir() ? null : state.getBlock();
-		s.tag[i] = block == null ? 0 : BOUNCY.contains(block) ? TAG_BOUNCY : COLD.contains(block) ? TAG_COLD : 0;
+		s.tag[i] = block == null ? 0 : BOUNCY.contains(block) ? TAG_BOUNCY : COLD.contains(block) ? TAG_COLD : SMOOTH.contains(block) ? TAG_SMOOTH : 0;
 		boolean skip = state.isAir() || (this.own != null && this.own.isInstance(state.getBlock()));
 		VoxelShape shape = skip ? null : state.getCollisionShape(level, pos);
 		if (shape == null || shape.isEmpty()) {
@@ -180,7 +186,7 @@ final class SolidCache {
 			int i = local(bx, by, bz);
 			kind = s.kind[i];
 			bits = s.partial[i];
-			solid = s.tag[i] == TAG_BOUNCY ? BOUNCY_SOLID : s.tag[i] == TAG_COLD ? COLD_SOLID : 1;
+			solid = s.tag[i] == TAG_BOUNCY ? BOUNCY_SOLID : s.tag[i] == TAG_COLD ? COLD_SOLID : s.tag[i] == TAG_SMOOTH ? SMOOTH_SOLID : 1;
 		}
 		int r = this.res;
 		for (int k = 0; k < r; k++) {

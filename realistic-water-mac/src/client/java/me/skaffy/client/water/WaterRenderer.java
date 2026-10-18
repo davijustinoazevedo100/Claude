@@ -38,6 +38,8 @@ public final class WaterRenderer implements AutoCloseable {
 	private VkTex materialId;
 	private VkTex thickness;
 	private VkTex foam;
+	/** The foam target holds no foam since it was last cleared (whitewater is off). */
+	private boolean foamClear;
 
 	public WaterRenderer() {
 		this.thicknessFormat = blendable(VkTex.R32F) && filterable(VkTex.R32F) ? VkTex.R32F : VkTex.R16F;
@@ -92,6 +94,7 @@ public final class WaterRenderer implements AutoCloseable {
 		this.materialId = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.thickness = new VkTex(this.thicknessFormat, w, h, VkTex.COLOR | VkTex.SAMPLED);
 		this.foam = new VkTex(VkTex.RGBA16F, w, h, VkTex.COLOR | VkTex.SAMPLED);
+		this.foamClear = false;
 	}
 
 	private void releaseTargets() {
@@ -153,26 +156,32 @@ public final class WaterRenderer implements AutoCloseable {
 		GraphicsProgram.end(cb);
 		Vk.barrier(cb);
 
-		GraphicsProgram.begin(cb, w, h, this.foam.view, new float[]{0, 0, 0, 0}, 0L);
-		if (WaterSettings.whitewater) {
-			for (Body body : bodies) {
-				WaterRegion r = body.region();
-				if (!r.material.usesWhitewater()) {
-					continue;
+		// With whitewater off (the default) the foam target only needs clearing once after it is (re)created.
+		if (WaterSettings.whitewater || !this.foamClear) {
+			this.foamClear = !WaterSettings.whitewater;
+			GraphicsProgram.begin(cb, w, h, this.foam.view, new float[]{0, 0, 0, 0}, 0L);
+			if (WaterSettings.whitewater) {
+				for (Body body : bodies) {
+					WaterRegion r = body.region();
+					if (!r.material.usesWhitewater()) {
+						continue;
+					}
+					this.whitewaterProgram.bind(cb, body.ubo(), Desc.ssbo(r.currentWhitewater()), depthTex, Desc.tex(this.gbuffer, this.nearest.handle),
+						view);
+					this.whitewaterProgram.push(cb, Program.f(WaterSettings.wwRadius), Program.f(0.5F), Program.f(0.3F), Program.f(WaterSettings.wwMaxPixels),
+						Program.f(WaterSettings.foamSize));
+					this.whitewaterProgram.drawIndirect(cb, r.args, WaterRegion.ARGS_WW_DRAW);
 				}
-				this.whitewaterProgram.bind(cb, body.ubo(), Desc.ssbo(r.currentWhitewater()), depthTex, Desc.tex(this.gbuffer, this.nearest.handle), view);
-				this.whitewaterProgram.push(cb, Program.f(WaterSettings.wwRadius), Program.f(0.5F), Program.f(0.3F), Program.f(WaterSettings.wwMaxPixels),
-					Program.f(WaterSettings.foamSize));
-				this.whitewaterProgram.drawIndirect(cb, r.args, WaterRegion.ARGS_WW_DRAW);
 			}
+			GraphicsProgram.end(cb);
+			Vk.barrier(cb);
 		}
-		GraphicsProgram.end(cb);
-		Vk.barrier(cb);
 
 		Desc waterUbo = null;
 		Desc lavaUbo = null;
 		Desc slimeUbo = null;
 		Desc honeyUbo = null;
+		Desc mudUbo = null;
 		for (Body body : bodies) {
 			if (body.region().material == Material.WATER && waterUbo == null) {
 				waterUbo = body.ubo();
@@ -182,6 +191,8 @@ public final class WaterRenderer implements AutoCloseable {
 				slimeUbo = body.ubo();
 			} else if (body.region().material == Material.HONEY && honeyUbo == null) {
 				honeyUbo = body.ubo();
+			} else if (body.region().material == Material.MUD && mudUbo == null) {
+				mudUbo = body.ubo();
 			}
 		}
 		GraphicsProgram.begin(cb, w, h, mainColorView, null, mainDepthView);
@@ -232,6 +243,18 @@ public final class WaterRenderer implements AutoCloseable {
 				matTex,
 				view);
 			this.compositeProgram.push(cb, Program.f(4.0F));
+			this.compositeProgram.draw(cb, 3, 1);
+		}
+		if (mudUbo != null) {
+			this.compositeProgram.bind(cb, mudUbo,
+				Desc.tex(this.gbuffer, this.nearest.handle),
+				Desc.tex(this.thickness, this.linear.handle),
+				Desc.tex(this.sceneColor, this.linear.handle),
+				depthTex,
+				Desc.tex(this.foam, this.linear.handle),
+				matTex,
+				view);
+			this.compositeProgram.push(cb, Program.f(5.0F));
 			this.compositeProgram.draw(cb, 3, 1);
 		}
 		GraphicsProgram.end(cb);
