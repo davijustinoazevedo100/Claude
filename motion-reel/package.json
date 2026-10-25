@@ -1,0 +1,13 @@
+{
+  "name": "motion-reel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Motion-graphics reel rendered frame by frame from code",
+  "scripts": {
+    "render": "node tools/render.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.11"
+  }
+}

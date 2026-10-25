@@ -1,0 +1,6 @@
+node_modules/
+out/*
+!out/motion-reel.mp4
+!out/soundtrack.wav
+__pycache__/
+*.pyc
