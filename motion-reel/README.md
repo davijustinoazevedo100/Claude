@@ -4,7 +4,9 @@ Um reel de **48 segundos, 1920×1080 a 60 fps**, feito do zero: sem After Effect
 sem plugins, sem imagens ou sons prontos. Cada quadro é desenhado por código (canvas 2D via Skia)
 e a trilha sonora é sintetizada em Python, nota por nota, sincronizada com as animações.
 
-Arquivo final: `out/motion-reel.mp4`
+Arquivo final: [`out/motion-reel.mp4`](out/motion-reel.mp4)
+
+![Nove quadros do reel](out/poster.png)
 
 ## As 8 cenas
 
