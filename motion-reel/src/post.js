@@ -109,13 +109,15 @@ export function createPost() {
     split(chR, '#ff0000');
     split(chG, '#00ff00');
     split(chB, '#0000ff');
+    // Only ever scale channels up, so every channel still covers the frame.
     const s = px / (W / 2);
+    const up = (L, k) => ctx.drawImage(L.c, (-W * k) / 2, (-H * k) / 2, W * (1 + k), H * (1 + k));
     ctx.save();
     ctx.globalCompositeOperation = 'copy';
-    ctx.drawImage(chG.c, 0, 0);
+    ctx.drawImage(chB.c, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(chR.c, -W * s / 2, -H * s / 2, W * (1 + s), H * (1 + s));
-    ctx.drawImage(chB.c, W * s / 2, H * s / 2, W * (1 - s), H * (1 - s));
+    up(chG, s);
+    up(chR, 2 * s);
     ctx.restore();
   }
 

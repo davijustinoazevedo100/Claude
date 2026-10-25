@@ -237,7 +237,7 @@ export default {
     if (wipe > 0) {
       const h = 1180 * wipe;
       ctx.fillStyle = PAL.paper;
-      ctx.fillRect(-200, LINE_Y - h * 0.82, 2320, h);
+      ctx.fillRect(-200, LINE_Y - h * 0.82, 2320, h * 1.12);
       ctx.fillStyle = PAL.ink;
       ctx.fillRect(LINE_X0, LINE_Y - 1, LINE_X1 - LINE_X0, 2);
     } else if (lt > T_COLLAPSE + 0.3) {

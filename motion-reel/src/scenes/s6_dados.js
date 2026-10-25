@@ -26,8 +26,11 @@ function odometer(ctx, value, x, y, size, color, lt, outP) {
   let p = digits - 1;
   for (const ch of str) {
     if (ch === '.') {
+      ctx.save();
+      clipRect(ctx, cx - 4, y - size * 0.8, dotW + 8, size * 0.9);
       ctx.fillStyle = color;
       ctx.fillText('.', cx, y - outP * lineH);
+      ctx.restore();
       cx += dotW;
       continue;
     }
@@ -83,7 +86,9 @@ export default {
     // ---------------------------------------------------------------- odometer
     const v = FRAMES * ease.outExpo(prog(lt, 0.15, 1.7));
     const oOut = ease.inExpo(prog(lt, OUT, OUT + 0.35));
-    odometer(ctx, v, X0 - 6, 330, 210, ink, lt, oOut);
+    // The counter rises into its windows, then rolls.
+    const oIn = 1 - ease.outExpo(prog(lt, 0.0, 0.45));
+    odometer(ctx, v, X0 - 6, 330, 210, ink, lt, oOut - oIn);
     label(ctx, 'FRAMES RENDERIZADOS — UM POR UM', X0, 395, lt, 0.4, { color: ink, size: 14, alpha: 0.75 * (1 - oOut) });
 
     // ---------------------------------------------------------------- stat chips
@@ -201,8 +206,8 @@ export default {
     const sh = ease.inOutExpo(prog(lt, 5.66, 5.98));
     if (sh > 0) {
       ctx.fillStyle = PAL.dark;
-      ctx.fillRect(-200, -200, 2320, (BASE + 200) * sh);
-      ctx.fillRect(-200, 1280 - (1280 - BASE) * sh, 2320, (1280 - BASE) * sh + 10);
+      ctx.fillRect(-200, -200, 2320, (BASE + 202) * sh);
+      ctx.fillRect(-200, 1280 - (1282 - BASE) * sh, 2320, (1282 - BASE) * sh + 10);
     }
     if (half > dotR) {
       ctx.fillStyle = sh > 0.5 ? PAL.paper : ink;

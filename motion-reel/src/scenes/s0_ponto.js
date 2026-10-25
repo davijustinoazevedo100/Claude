@@ -69,7 +69,7 @@ function floorDip(t) {
 
 export default {
   blur: 5,
-  post: (lt) => ({ bloom: 0.55 * (1 - prog(lt, 3.6, 3.85)), vignette: 0.32, grain: 0.06 }),
+  post: (lt) => ({ bloom: 0.55 * (1 - prog(lt, 3.6, 3.85)), vignette: 0.32 - 0.22 * prog(lt, 3.7, 3.95), grain: 0.06 + 0.01 * prog(lt, 3.7, 3.95) }),
 
   draw(ctx, t, lt, env) {
     env.fill(ctx, PAL.dark);
