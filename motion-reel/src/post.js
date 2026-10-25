@@ -32,6 +32,22 @@ export function createPost() {
     grains.push(g);
   }
 
+  // Dither plates: 0-3 levels of additive noise that break up 8-bit banding
+  // in dark gradients before the encoder sees them.
+  const dithers = [];
+  for (let k = 0; k < 4; k++) {
+    const g = mk(W, H);
+    const img = g.x.createImageData(W, H);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.floor(r() * 4);
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+    g.x.putImageData(img, 0, 0);
+    dithers.push(g);
+  }
+
   // Vignette plate: clear centre, dark corners. Built per pixel with a little
   // dither so the falloff never bands on dark backgrounds.
   const vig = mk(W, H);
@@ -121,5 +137,12 @@ export function createPost() {
     ctx.restore();
   }
 
-  return { bloom, chromatic, vignette, grain, tmp };
+  function dither(ctx, frame) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(dithers[frame % dithers.length].c, 0, 0);
+    ctx.restore();
+  }
+
+  return { bloom, chromatic, vignette, grain, dither, tmp };
 }

@@ -160,6 +160,7 @@ export async function createEngine() {
     post.vignette(o, fx.vignette);
     if (overlay) hud.draw(o, t, frame);
     post.grain(o, frame, fx.grain);
+    post.dither(o, frame);
     return out;
   }
 
