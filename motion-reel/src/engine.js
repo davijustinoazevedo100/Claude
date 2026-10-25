@@ -137,8 +137,15 @@ export async function createEngine() {
     if (n === 1) {
       drawScene(o, t);
     } else {
+      // Hard cuts inside a scene must not smear: keep every sub-frame on the
+      // same side of the cut as the frame itself.
+      const cuts = (s.cuts || []).map((c) => c + s.start);
       for (let k = 0; k < n; k++) {
-        const ts = clamp(t + ((k + 0.5) / n - 0.5) * (SHUTTER / FPS), 0, DURATION - 1e-4);
+        let ts = clamp(t + ((k + 0.5) / n - 0.5) * (SHUTTER / FPS), 0, DURATION - 1e-4);
+        for (const c of cuts) {
+          if (t < c && ts >= c) ts = c - 1e-4;
+          else if (t >= c && ts < c) ts = c;
+        }
         drawScene(sub.ctx, ts);
         o.save();
         o.globalCompositeOperation = 'source-over';
